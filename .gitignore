@@ -1,0 +1,57 @@
+# === Personal files (stay on disk, never tracked) ===
+Work/
+iso/
+blackboard-downloader/
+drivers/
+resume/
+SchoolCalander/
+Research/
+IMG_0354.jpeg
+todo_list.md
+
+# === Runtime / cache / logs ===
+.logs/
+.agent/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+node_modules/
+bun.lock
+
+# === Databases ===
+*.db
+*.db-wal
+*.db-shm
+
+# === Beads runtime (config tracked, db ignored) ===
+.beads/*.db
+.beads/*.db-wal
+.beads/*.db-shm
+
+# === MCP server runtime ===
+mcp-servers/whisper-voice/models/
+mcp-servers/task-state/tasks.db
+
+# === Voice interface runtime ===
+voice-interface/orchestrator/__pycache__/
+voice-interface/orchestrator/*.pyc
+
+# === Large binaries (install separately) ===
+# bd binary (~33MB) — see README.md for install instructions
+
+# === Editor / OS artifacts ===
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === Machine-specific Claude settings ===
+.claude/settings.local.json
+
+# === Legacy dirs (removed during reorg) ===
+.codex/
+.opencode/
+.ai-orchestrator/
+package.json

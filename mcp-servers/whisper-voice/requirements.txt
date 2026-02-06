@@ -1,0 +1,21 @@
+# Whisper Voice MCP Server Dependencies
+
+# Core MCP protocol (though we implement it directly)
+# mcp>=0.1.0
+
+# Speech recognition for audio capture
+SpeechRecognition>=3.10.0
+
+# Audio interface
+PyAudio>=0.2.13
+
+# OpenAI Whisper for local speech-to-text
+openai-whisper>=20231117
+
+# Whisper dependencies
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+
+# Optional: ffmpeg-python for better audio handling
+# ffmpeg-python>=0.2.0

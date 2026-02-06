@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+#
+# aio-init - Initialize AI orchestration for a project
+# Sets up the necessary files and hooks
+#
+# Usage:
+#   aio-init [project-path]
+
+set -euo pipefail
+
+AIO_DIR="${AIO_DIR:-$HOME/.ai-orchestrator}"
+PROJECT_DIR="${1:-$(pwd)}"
+
+echo "Initializing AI Orchestration for: $PROJECT_DIR"
+
+# Create .ai-orchestrator directory in project
+mkdir -p "$PROJECT_DIR/.ai-orchestrator"
+
+# Create project-specific context file
+cat > "$PROJECT_DIR/.ai-orchestrator/CONTEXT.md" << 'EOF'
+# AI Shared Context
+
+This file is automatically updated by the AI orchestration system.
+All AI tools (Claude, Codex, Gemini, Amp) can read and contribute to this context.
+
+## How to Use
+
+1. **Before starting work**: Check `aio status` to see who's working on what
+2. **Claim your work area**: Use `aio claim file <path>` or `aio claim directory <path>`
+3. **Share learnings**: Use `aio-context learning "your insight"`
+4. **Hand off work**: Use `aio-context handoff "what to know"`
+
+## Active Work
+
+Run `aio status` to see current AI instances and their claims.
+
+## Decisions
+
+*Decisions made during development will appear here*
+
+## Patterns
+
+*Useful patterns discovered will appear here*
+
+## Warnings
+
+*Pitfalls to avoid will appear here*
+
+EOF
+
+# Create instructions file for AI tools
+cat > "$PROJECT_DIR/.ai-orchestrator/INSTRUCTIONS.md" << 'EOF'
+# AI Orchestration Instructions
+
+## Before Starting Any Task
+
+1. Register with orchestrator:
+   ```bash
+   source ~/.ai-orchestrator/integrations/<your-tool>-hook.sh
+   ```
+   Or manually: `aio register <tool> $(pwd)`
+
+2. Check for existing work:
+   ```bash
+   aio status
+   ```
+
+3. Check beads for available tasks:
+   ```bash
+   bd ready
+   ```
+
+## Claiming Work
+
+Before editing files, claim them to prevent conflicts:
+
+```bash
+# Claim a single file
+aio claim file src/main.ts
+
+# Claim a directory
+aio claim directory src/components/
+
+# Claim a beads issue
+aio claim task AI-Tools-abc
+```
+
+## During Work
+
+- Call `aio heartbeat` periodically (every few minutes)
+- Update your current task: `aio task "working on X" "AI-Tools-abc"`
+- Share important learnings: `aio-context learning "discovered X works better than Y"`
+
+## Finishing Work
+
+1. Release your claims:
+   ```bash
+   aio release all
+   ```
+
+2. If using beads, close your issues:
+   ```bash
+   bd close <issue-id>
+   ```
+
+3. Leave a handoff note:
+   ```bash
+   aio-context handoff "completed X, next steps are Y"
+   ```
+
+4. Unregister:
+   ```bash
+   aio unregister
+   ```
+
+## Conflict Resolution
+
+If you encounter a claimed file:
+1. Check who owns it: `aio check <path>`
+2. Either wait, or coordinate via handoff notes
+3. In emergencies, `aio cleanup` removes stale (5min+) claims
+
+EOF
+
+# Add to .gitignore if exists
+if [[ -f "$PROJECT_DIR/.gitignore" ]]; then
+    if ! grep -q ".ai-orchestrator/" "$PROJECT_DIR/.gitignore"; then
+        echo "" >> "$PROJECT_DIR/.gitignore"
+        echo "# AI Orchestration (local state)" >> "$PROJECT_DIR/.gitignore"
+        echo ".ai-orchestrator/*.log" >> "$PROJECT_DIR/.gitignore"
+        echo ".ai-orchestrator/.lock" >> "$PROJECT_DIR/.gitignore"
+    fi
+fi
+
+# Create update hook script for generating context
+cat > "$PROJECT_DIR/.ai-orchestrator/update-context.sh" << 'EOF'
+#!/usr/bin/env bash
+# Run this to update CONTEXT.md with latest shared context
+AIO_DIR="${AIO_DIR:-$HOME/.ai-orchestrator}"
+export PATH="$AIO_DIR/bin:$PATH"
+
+aio-context export "$(pwd)" > "$(dirname "$0")/CONTEXT.md.new"
+mv "$(dirname "$0")/CONTEXT.md.new" "$(dirname "$0")/CONTEXT.md"
+echo "Context updated"
+EOF
+chmod +x "$PROJECT_DIR/.ai-orchestrator/update-context.sh"
+
+echo ""
+echo "Initialization complete!"
+echo ""
+echo "Files created:"
+echo "  .ai-orchestrator/CONTEXT.md     - Shared context file"
+echo "  .ai-orchestrator/INSTRUCTIONS.md - Usage instructions"
+echo "  .ai-orchestrator/update-context.sh - Context refresh script"
+echo ""
+echo "Add to your PATH:"
+echo "  export PATH=\"\$HOME/.ai-orchestrator/bin:\$PATH\""
+echo ""
+echo "To start using:"
+echo "  aio register <tool>    # Register this AI instance"
+echo "  aio status             # See all active instances"
+echo "  bd ready               # See available beads issues"

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__directory_tree",
+      "mcp__filesystem__read_multiple_files",
+      "mcp__memory__create_entities",
+      "mcp__memory__create_relations",
+      "Bash(xargs cat:*)",
+      "Bash(bd:*)",
+      "Bash(bd stats:*)",
+      "Bash(chmod:*)",
+      "Bash(export PATH:*)",
+      "Bash(aio register:*)",
+      "Bash(aio status:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(aio claim file:*)",
+      "Bash(aio-context decision \"Using beads for task tracking across all AI tools\")",
+      "Bash(aio-context learning:*)",
+      "Bash(aio release:*)",
+      "Bash(aio unregister:*)",
+      "Bash(~/.ai-orchestrator/bin/aio-inject:*)"
+    ]
+  },
+  "outputStyle": "default"
+}

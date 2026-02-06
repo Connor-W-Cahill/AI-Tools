@@ -1,0 +1,53 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo apt install:*)",
+      "Bash(sudo npm install:*)",
+      "Bash(sudo:*)",
+      "Bash(pip3 show:*)",
+      "Bash(timeout 5 python3:*)",
+      "Bash(python3:*)",
+      "mcp__memory__search_nodes",
+      "mcp__memory__read_graph",
+      "mcp__memory__create_entities",
+      "mcp__voice__listen",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_text_file",
+      "mcp__filesystem__read_multiple_files",
+      "mcp__filesystem__write_file",
+      "mcp__filesystem__list_allowed_directories",
+      "Bash(find:*)",
+      "mcp__filesystem__directory_tree",
+      "Bash(ls:*)"
+    ]
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "/usr/bin/mcp-server-filesystem",
+      "args": [
+        "/home/connor"
+      ],
+      "env": {}
+    },
+    "memory": {
+      "command": "/usr/bin/mcp-server-memory",
+      "args": [],
+      "env": {}
+    },
+    "everything": {
+      "command": "/usr/bin/mcp-server-everything",
+      "args": [],
+      "env": {}
+    },
+    "playwright": {
+      "command": "/usr/bin/playwright-mcp-server",
+      "args": [],
+      "env": {}
+    },
+    "browser": {
+      "command": "/usr/bin/mcpbrowser",
+      "args": [],
+      "env": {}
+    }
+  }
+}

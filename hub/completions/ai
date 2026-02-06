@@ -1,0 +1,33 @@
+# bash completion for ai — Mobile-SSH AI Tool Hub
+_ai_completion() {
+    local cur prev
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Top-level commands
+    if [[ $COMP_CWORD -eq 1 ]]; then
+        local cmds="s c x g a o q r t d n i w p k l h f ? status ready take done new info windows peek kill log handoff flush help"
+        COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
+        return
+    fi
+
+    # Subcommand-specific completions
+    case "${COMP_WORDS[1]}" in
+        t|take|d|done|i|info)
+            # Complete with issue IDs (short form)
+            local ids
+            ids=$(bd list --status=open --status=in_progress 2>/dev/null | grep -oE 'AI-Tools-[a-z0-9]+' | sed 's/AI-Tools-//')
+            COMPREPLY=( $(compgen -W "$ids" -- "$cur") )
+            ;;
+        w|windows|p|peek|k|kill)
+            # Complete with tmux window indices
+            if [[ -n "${TMUX:-}" ]]; then
+                local wins
+                wins=$(tmux list-windows -F '#{window_index}' 2>/dev/null)
+                COMPREPLY=( $(compgen -W "$wins" -- "$cur") )
+            fi
+            ;;
+    esac
+}
+complete -F _ai_completion ai

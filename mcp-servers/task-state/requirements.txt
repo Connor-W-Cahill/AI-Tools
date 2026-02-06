@@ -1,0 +1,5 @@
+# No external dependencies required
+# This server uses only Python standard library:
+# - json (built-in)
+# - sqlite3 (built-in)
+# - sys, logging, pathlib, typing (built-in)

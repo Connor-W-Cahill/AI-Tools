@@ -1,0 +1,453 @@
+#!/usr/bin/env bash
+#
+# aio - AI Orchestrator CLI
+# Coordinates multiple AI CLI tools (Claude, Codex, Gemini, Amp)
+#
+# Usage:
+#   aio register <tool> [project]     - Register this AI instance
+#   aio heartbeat                     - Update heartbeat (call periodically)
+#   aio status                        - Show all active instances
+#   aio claim <type> <target>         - Claim a file/dir/task
+#   aio release <claim-id|all>        - Release a claim
+#   aio check <path>                  - Check if path is claimed
+#   aio context add <category> <msg>  - Add shared context
+#   aio context list [project]        - List context entries
+#   aio handoff <message>             - Leave handoff note for next AI
+#   aio cleanup                       - Remove stale instances
+#   aio unregister                    - Unregister this instance
+
+set -euo pipefail
+
+AIO_DIR="${AIO_DIR:-$HOME/.ai-orchestrator}"
+STATE_FILE="$AIO_DIR/state.json"
+INSTANCE_FILE="$AIO_DIR/.current_instance"
+LOCK_FILE="$AIO_DIR/.lock"
+STALE_THRESHOLD=300  # 5 minutes without heartbeat = stale
+
+# Ensure jq is available
+command -v jq &>/dev/null || { echo "Error: jq is required"; exit 1; }
+
+# File locking for concurrent access
+acquire_lock() {
+    local timeout=10
+    local count=0
+    while ! mkdir "$LOCK_FILE" 2>/dev/null; do
+        sleep 0.1
+        ((count++))
+        if ((count > timeout * 10)); then
+            echo "Error: Could not acquire lock" >&2
+            exit 1
+        fi
+    done
+    trap 'rm -rf "$LOCK_FILE"' EXIT
+}
+
+release_lock() {
+    rm -rf "$LOCK_FILE"
+    trap - EXIT
+}
+
+# Generate unique ID
+gen_id() {
+    local prefix="${1:-}"
+    echo "${prefix}$(date +%s)-$(head -c 4 /dev/urandom | xxd -p)"
+}
+
+# Get current timestamp
+now() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Read state
+read_state() {
+    if [[ -f "$STATE_FILE" ]]; then
+        cat "$STATE_FILE"
+    else
+        echo '{"schemaVersion":1,"instances":{},"claims":{},"context":[]}'
+    fi
+}
+
+# Write state
+write_state() {
+    local state="$1"
+    echo "$state" | jq '.' > "$STATE_FILE.tmp"
+    mv "$STATE_FILE.tmp" "$STATE_FILE"
+}
+
+# Get current instance ID
+get_instance_id() {
+    if [[ -f "$INSTANCE_FILE" ]]; then
+        cat "$INSTANCE_FILE"
+    else
+        echo ""
+    fi
+}
+
+# Register a new AI instance
+cmd_register() {
+    local tool="${1:-unknown}"
+    local project="${2:-$(pwd)}"
+
+    acquire_lock
+
+    local id=$(gen_id "${tool}-")
+    local state=$(read_state)
+    local ts=$(now)
+
+    state=$(echo "$state" | jq --arg id "$id" --arg tool "$tool" \
+        --arg project "$project" --arg ts "$ts" \
+        '.instances[$id] = {
+            "id": $id,
+            "tool": $tool,
+            "project": $project,
+            "status": "active",
+            "currentTask": null,
+            "beadsIssue": null,
+            "startedAt": $ts,
+            "lastHeartbeat": $ts,
+            "claims": []
+        } | .updatedAt = $ts')
+
+    write_state "$state"
+    echo "$id" > "$INSTANCE_FILE"
+    release_lock
+
+    echo "Registered: $id"
+}
+
+# Update heartbeat
+cmd_heartbeat() {
+    local id=$(get_instance_id)
+    [[ -z "$id" ]] && { echo "Not registered"; exit 1; }
+
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(now)
+
+    state=$(echo "$state" | jq --arg id "$id" --arg ts "$ts" \
+        'if .instances[$id] then .instances[$id].lastHeartbeat = $ts | .updatedAt = $ts else . end')
+
+    write_state "$state"
+    release_lock
+    echo "Heartbeat updated"
+}
+
+# Show status of all instances
+cmd_status() {
+    local state=$(read_state)
+    local ts=$(date +%s)
+
+    echo "=== AI Orchestrator Status ==="
+    echo ""
+
+    # Clean up stale and show instances
+    echo "Active Instances:"
+    echo "$state" | jq -r --argjson threshold "$STALE_THRESHOLD" --argjson now "$ts" '
+        .instances | to_entries[] |
+        select((.value.lastHeartbeat | fromdateiso8601) > ($now - $threshold)) |
+        "  [\(.value.tool)] \(.key)\n    Project: \(.value.project)\n    Status: \(.value.status)\n    Task: \(.value.currentTask // "none")\n    Claims: \(.value.claims | length)"
+    '
+
+    echo ""
+    echo "Active Claims:"
+    echo "$state" | jq -r '
+        .claims | to_entries[] |
+        "  [\(.value.type)] \(.value.target)\n    Owner: \(.value.instanceId)\n    Project: \(.value.project // "global")"
+    '
+
+    echo ""
+    echo "Recent Context:"
+    echo "$state" | jq -r '
+        .context | sort_by(.createdAt) | reverse | .[0:5][] |
+        "  [\(.category)] \(.content | .[0:60])...\n    From: \(.source)"
+    '
+}
+
+# Claim a resource
+cmd_claim() {
+    local type="${1:-file}"
+    local target="${2:-}"
+    local project="${3:-$(pwd)}"
+
+    [[ -z "$target" ]] && { echo "Usage: aio claim <type> <target>"; exit 1; }
+
+    local id=$(get_instance_id)
+    [[ -z "$id" ]] && { echo "Not registered"; exit 1; }
+
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(now)
+
+    # Check if already claimed
+    local existing=$(echo "$state" | jq -r --arg target "$target" \
+        '.claims | to_entries[] | select(.value.target == $target) | .key')
+
+    if [[ -n "$existing" ]]; then
+        local owner=$(echo "$state" | jq -r --arg key "$existing" '.claims[$key].instanceId')
+        release_lock
+        echo "Already claimed by: $owner"
+        exit 1
+    fi
+
+    local claim_id=$(gen_id "claim-")
+
+    state=$(echo "$state" | jq --arg cid "$claim_id" --arg id "$id" \
+        --arg type "$type" --arg target "$target" --arg project "$project" --arg ts "$ts" \
+        '.claims[$cid] = {
+            "id": $cid,
+            "instanceId": $id,
+            "type": $type,
+            "target": $target,
+            "project": $project,
+            "exclusive": true,
+            "claimedAt": $ts
+        } | .instances[$id].claims += [$cid] | .updatedAt = $ts')
+
+    write_state "$state"
+    release_lock
+
+    echo "Claimed: $claim_id"
+}
+
+# Release a claim
+cmd_release() {
+    local claim_id="${1:-}"
+    local id=$(get_instance_id)
+
+    [[ -z "$id" ]] && { echo "Not registered"; exit 1; }
+
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(now)
+
+    if [[ "$claim_id" == "all" ]]; then
+        # Release all claims for this instance
+        state=$(echo "$state" | jq --arg id "$id" --arg ts "$ts" '
+            .claims |= with_entries(select(.value.instanceId != $id)) |
+            .instances[$id].claims = [] |
+            .updatedAt = $ts')
+    else
+        # Release specific claim
+        state=$(echo "$state" | jq --arg cid "$claim_id" --arg id "$id" --arg ts "$ts" '
+            del(.claims[$cid]) |
+            .instances[$id].claims -= [$cid] |
+            .updatedAt = $ts')
+    fi
+
+    write_state "$state"
+    release_lock
+
+    echo "Released"
+}
+
+# Check if path is claimed
+cmd_check() {
+    local path="${1:-}"
+    [[ -z "$path" ]] && { echo "Usage: aio check <path>"; exit 1; }
+
+    local state=$(read_state)
+
+    # Check exact match and directory containment
+    local result=$(echo "$state" | jq -r --arg path "$path" '
+        .claims | to_entries[] |
+        select(.value.target == $path or ($path | startswith(.value.target + "/"))) |
+        "CLAIMED by \(.value.instanceId) (\(.value.type): \(.value.target))"
+    ')
+
+    if [[ -n "$result" ]]; then
+        echo "$result"
+        exit 1
+    else
+        echo "AVAILABLE"
+        exit 0
+    fi
+}
+
+# Add context entry
+cmd_context_add() {
+    local category="${1:-learning}"
+    local content="${2:-}"
+    local project="${3:-}"
+
+    [[ -z "$content" ]] && { echo "Usage: aio context add <category> <message>"; exit 1; }
+
+    local id=$(get_instance_id)
+    local tool="unknown"
+
+    if [[ -n "$id" ]]; then
+        tool=$(read_state | jq -r --arg id "$id" '.instances[$id].tool // "unknown"')
+    fi
+
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(now)
+    local ctx_id=$(gen_id "ctx-")
+
+    state=$(echo "$state" | jq --arg cid "$ctx_id" --arg cat "$category" \
+        --arg content "$content" --arg source "$tool" --arg project "$project" --arg ts "$ts" \
+        '.context += [{
+            "id": $cid,
+            "project": (if $project == "" then null else $project end),
+            "category": $cat,
+            "content": $content,
+            "source": $source,
+            "createdAt": $ts
+        }] | .updatedAt = $ts')
+
+    write_state "$state"
+    release_lock
+
+    echo "Context added: $ctx_id"
+}
+
+# List context
+cmd_context_list() {
+    local project="${1:-}"
+    local state=$(read_state)
+
+    if [[ -n "$project" ]]; then
+        echo "$state" | jq -r --arg project "$project" '
+            .context | map(select(.project == $project or .project == null)) |
+            sort_by(.createdAt) | reverse | .[] |
+            "[\(.category)] \(.source): \(.content)"
+        '
+    else
+        echo "$state" | jq -r '
+            .context | sort_by(.createdAt) | reverse | .[] |
+            "[\(.category)] \(.source) (\(.project // "global")): \(.content)"
+        '
+    fi
+}
+
+# Leave handoff note
+cmd_handoff() {
+    local message="${1:-}"
+    [[ -z "$message" ]] && { echo "Usage: aio handoff <message>"; exit 1; }
+
+    cmd_context_add "handoff" "$message" "$(pwd)"
+    echo "Handoff note left"
+}
+
+# Update current task
+cmd_task() {
+    local task="${1:-}"
+    local beads_issue="${2:-}"
+
+    local id=$(get_instance_id)
+    [[ -z "$id" ]] && { echo "Not registered"; exit 1; }
+
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(now)
+
+    state=$(echo "$state" | jq --arg id "$id" --arg task "$task" \
+        --arg issue "$beads_issue" --arg ts "$ts" \
+        '.instances[$id].currentTask = (if $task == "" then null else $task end) |
+         .instances[$id].beadsIssue = (if $issue == "" then null else $issue end) |
+         .instances[$id].status = (if $task == "" then "idle" else "working" end) |
+         .updatedAt = $ts')
+
+    write_state "$state"
+    release_lock
+
+    echo "Task updated"
+}
+
+# Cleanup stale instances
+cmd_cleanup() {
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(date +%s)
+    local now_iso=$(now)
+
+    # Remove stale instances and their claims
+    state=$(echo "$state" | jq --argjson threshold "$STALE_THRESHOLD" --argjson now "$ts" --arg now_iso "$now_iso" '
+        .instances | to_entries | map(select((.value.lastHeartbeat | fromdateiso8601) > ($now - $threshold))) | from_entries as $active |
+        .claims | to_entries | map(select(.value.instanceId as $iid | $active | has($iid))) | from_entries as $valid_claims |
+        {
+            schemaVersion: 1,
+            updatedAt: $now_iso,
+            instances: $active,
+            claims: $valid_claims,
+            context: .context
+        }
+    ' < <(read_state))
+
+    write_state "$state"
+    release_lock
+
+    echo "Cleanup complete"
+}
+
+# Unregister instance
+cmd_unregister() {
+    local id=$(get_instance_id)
+    [[ -z "$id" ]] && { echo "Not registered"; exit 1; }
+
+    cmd_release all
+
+    acquire_lock
+    local state=$(read_state)
+    local ts=$(now)
+
+    state=$(echo "$state" | jq --arg id "$id" --arg ts "$ts" \
+        'del(.instances[$id]) | .updatedAt = $ts')
+
+    write_state "$state"
+    rm -f "$INSTANCE_FILE"
+    release_lock
+
+    echo "Unregistered: $id"
+}
+
+# Main command dispatch
+main() {
+    local cmd="${1:-status}"
+    shift || true
+
+    case "$cmd" in
+        register)    cmd_register "$@" ;;
+        heartbeat)   cmd_heartbeat ;;
+        status)      cmd_status ;;
+        claim)       cmd_claim "$@" ;;
+        release)     cmd_release "$@" ;;
+        check)       cmd_check "$@" ;;
+        context)
+            local subcmd="${1:-list}"
+            shift || true
+            case "$subcmd" in
+                add)  cmd_context_add "$@" ;;
+                list) cmd_context_list "$@" ;;
+                *)    echo "Unknown context command: $subcmd" ;;
+            esac
+            ;;
+        handoff)     cmd_handoff "$@" ;;
+        task)        cmd_task "$@" ;;
+        cleanup)     cmd_cleanup ;;
+        unregister)  cmd_unregister ;;
+        help|--help|-h)
+            echo "aio - AI Orchestrator CLI"
+            echo ""
+            echo "Commands:"
+            echo "  register <tool> [project]  - Register AI instance"
+            echo "  heartbeat                  - Update heartbeat"
+            echo "  status                     - Show all instances"
+            echo "  claim <type> <target>      - Claim file/dir/task"
+            echo "  release <id|all>           - Release claims"
+            echo "  check <path>               - Check if claimed"
+            echo "  context add <cat> <msg>    - Add shared context"
+            echo "  context list [project]     - List context"
+            echo "  handoff <message>          - Leave handoff note"
+            echo "  task <description> [issue] - Update current task"
+            echo "  cleanup                    - Remove stale instances"
+            echo "  unregister                 - Unregister instance"
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            echo "Run 'aio help' for usage"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

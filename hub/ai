@@ -1,0 +1,322 @@
+#!/usr/bin/env bash
+#
+# ai — Mobile-SSH-friendly AI tool hub
+# Ultra-short subcommands for phone keyboards
+#
+# Usage: ai [command] [args...]
+#   ai          Dashboard (AIs + tasks + tmux)
+#   ai ?        Help card
+#
+set -euo pipefail
+
+# --- Detect repo root (AI-Tools dir) ---
+_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AI_TOOLS_DIR="${AI_TOOLS_DIR:-$(cd "$_script_dir/.." && pwd)}"
+
+# --- Constants ---
+# Prefer repo-local orchestrator; fall back to ~/.ai-orchestrator
+if [[ -x "$AI_TOOLS_DIR/orchestrator/bin/aio" ]]; then
+    AIO_DIR="$AI_TOOLS_DIR/orchestrator"
+else
+    AIO_DIR="${AIO_DIR:-$HOME/.ai-orchestrator}"
+fi
+AIO="$AIO_DIR/bin/aio"
+AIOCTX="$AIO_DIR/bin/aio-context"
+STATE_FILE="${HOME}/.ai-orchestrator/state.json"
+STALE_THRESHOLD=300
+
+# --- Colors (auto-disabled on pipe or NO_COLOR) ---
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    R=$'\e[31m' G=$'\e[32m' Y=$'\e[33m' B=$'\e[34m'
+    M=$'\e[35m' C=$'\e[36m' W=$'\e[1m'  D=$'\e[2m'
+    N=$'\e[0m'
+else
+    R='' G='' Y='' B='' M='' C='' W='' D='' N=''
+fi
+
+# --- Helpers ---
+
+# Terminal width (default 40 for phone)
+_cols() { echo "${COLUMNS:-$(tput cols 2>/dev/null || echo 40)}"; }
+
+# Truncate string to width
+trunc() {
+    local s="$1" max="${2:-$(_cols)}"
+    if (( ${#s} > max )); then
+        echo "${s:0:$((max-2))}.."
+    else
+        echo "$s"
+    fi
+}
+
+# Section header
+hdr() { echo "${W}--- $1 ---${N}"; }
+
+die() { echo "${R}err:${N} $*" >&2; exit 1; }
+info() { echo "${G}>${N} $*"; }
+
+need_tmux() {
+    [[ -n "${TMUX:-}" ]] || die "not in tmux"
+}
+
+# Map single-letter to tool name
+tool_name() {
+    case "$1" in
+        c) echo "claude" ;;
+        x) echo "codex"  ;;
+        g) echo "gemini" ;;
+        a) echo "amp"    ;;
+        o) echo "opencode" ;;
+        q) echo "qwen"   ;;
+        *) echo "$1"     ;;
+    esac
+}
+
+# Map tool name to binary
+tool_bin() {
+    case "$1" in
+        claude)   echo "claude"   ;;
+        codex)    echo "codex"    ;;
+        gemini)   echo "gemini"   ;;
+        amp)      echo "amp"      ;;
+        opencode) echo "opencode" ;;
+        qwen)     echo "qwen"    ;;
+        *)        echo "$1"       ;;
+    esac
+}
+
+# --- Commands ---
+
+cmd_status() {
+    local w=$(_cols)
+    local now_epoch
+    now_epoch=$(date +%s)
+
+    # --- AIs ---
+    hdr "AIs"
+    if [[ -f "$STATE_FILE" ]]; then
+        local ai_out
+        ai_out=$(jq -r --argjson stale "$STALE_THRESHOLD" --argjson now "$now_epoch" '
+            .instances | to_entries[]
+            | select((.value.lastHeartbeat | fromdateiso8601) > ($now - $stale))
+            | " \(.value.tool | .[0:10])\t\(.value.project | split("/")[-1] | .[0:12])\t\(.value.status | .[0:8])"
+        ' "$STATE_FILE" 2>/dev/null || true)
+        if [[ -n "$ai_out" ]]; then
+            echo "$ai_out" | column -t -s$'\t'
+        else
+            echo " ${D}(none active)${N}"
+        fi
+    else
+        echo " ${D}(no state file)${N}"
+    fi
+
+    # --- Tasks ---
+    local open_n wip_n
+    open_n=$(bd count --status=open 2>/dev/null || echo 0)
+    wip_n=$(bd count --status=in_progress 2>/dev/null || echo 0)
+    hdr "Tasks (${open_n} open, ${wip_n} wip)"
+    {
+        bd list --status=in_progress 2>/dev/null || true
+        bd list --status=open 2>/dev/null || true
+    } | head -8 | while IFS= read -r line; do
+        trunc " $line" "$w"
+    done
+    [[ $((open_n + wip_n)) -eq 0 ]] && echo " ${D}(none)${N}"
+
+    # --- Tmux ---
+    if [[ -n "${TMUX:-}" ]]; then
+        hdr "Tmux"
+        tmux list-windows -F ' #{window_index}:#{window_name}#{?window_active,*, }' 2>/dev/null || true
+    fi
+}
+
+cmd_ready() {
+    bd ready 2>/dev/null || echo "No ready tasks"
+}
+
+cmd_take() {
+    local id="${1:-}"
+    [[ -z "$id" ]] && die "usage: ai t ID"
+    # Prefix project if bare short-id
+    [[ "$id" == *-* ]] || id="AI-Tools-$id"
+    bd update "$id" --status=in_progress
+    info "took $id"
+}
+
+cmd_done() {
+    local id="${1:-}"
+    [[ -z "$id" ]] && die "usage: ai d ID"
+    [[ "$id" == *-* ]] || id="AI-Tools-$id"
+    local reason="${2:-}"
+    if [[ -n "$reason" ]]; then
+        bd close "$id" --reason="$reason"
+    else
+        bd close "$id"
+    fi
+    info "closed $id"
+}
+
+cmd_new() {
+    local title="$*"
+    [[ -z "$title" ]] && die "usage: ai n <title words>"
+    bd create --title="$title" --type=task --priority=2
+}
+
+cmd_info() {
+    local id="${1:-}"
+    [[ -z "$id" ]] && die "usage: ai i ID"
+    [[ "$id" == *-* ]] || id="AI-Tools-$id"
+    bd show "$id"
+}
+
+cmd_windows() {
+    need_tmux
+    local target="${1:-}"
+    if [[ -z "$target" ]]; then
+        tmux list-windows -F ' #{window_index}:#{window_name}#{?window_active,*, }'
+    else
+        tmux select-window -t "$target"
+        info "switched to window $target"
+    fi
+}
+
+cmd_peek() {
+    need_tmux
+    local target="${1:-0}"
+    local lines="${2:-15}"
+    echo "${D}--- pane $target (last $lines lines) ---${N}"
+    tmux capture-pane -t "$target" -p -S "-$lines"
+}
+
+cmd_kill() {
+    need_tmux
+    local target="${1:-}"
+    [[ -z "$target" ]] && die "usage: ai k N"
+    tmux send-keys -t "$target" C-c
+    info "sent Ctrl-C to pane $target"
+}
+
+cmd_log() {
+    if [[ -f "$STATE_FILE" ]]; then
+        jq -r '
+            .context | sort_by(.createdAt) | reverse | .[0:10][] |
+            " [\(.category)] \(.source): \(.content | .[0:60])"
+        ' "$STATE_FILE" 2>/dev/null || echo "(no context)"
+    else
+        echo "(no state file)"
+    fi
+}
+
+cmd_handoff() {
+    local msg="$*"
+    [[ -z "$msg" ]] && die "usage: ai h <message words>"
+    "$AIOCTX" handoff "$msg"
+    info "handoff saved"
+}
+
+cmd_flush() {
+    bd sync --flush-only
+    info "synced"
+}
+
+cmd_launch() {
+    local letter="$1"; shift
+    local name
+    name=$(tool_name "$letter")
+    local bin
+    bin=$(tool_bin "$name")
+
+    command -v "$bin" &>/dev/null || die "$name ($bin) not found"
+
+    info "launching $name (auto-lifecycle)"
+    (
+        # Register with orchestrator
+        "$AIO" register "$name" "$(pwd)" 2>/dev/null || true
+
+        # Cleanup on exit (any exit: normal, Ctrl-C, error)
+        cleanup() {
+            "$AIO" release all 2>/dev/null || true
+            "$AIO" unregister 2>/dev/null || true
+        }
+        trap cleanup EXIT
+
+        # Heartbeat in background
+        (
+            while true; do
+                sleep 60
+                "$AIO" heartbeat 2>/dev/null || true
+            done
+        ) &
+        local hb_pid=$!
+
+        # Run the tool
+        "$bin" "$@" || true
+
+        # Kill heartbeat
+        kill "$hb_pid" 2>/dev/null || true
+        wait "$hb_pid" 2>/dev/null || true
+    )
+}
+
+cmd_help() {
+    cat <<'EOF'
+ai — Mobile-SSH AI Tool Hub
+
+STATUS
+  ai          Dashboard (AIs+tasks+tmux)
+  ai s        Same as above
+
+LAUNCH AI (auto register/unregister)
+  ai c [args] Claude
+  ai x [args] Codex
+  ai g [args] Gemini
+  ai a [args] Amp
+  ai o [args] OpenCode
+  ai q [args] Qwen
+
+TASKS (beads)
+  ai r        Ready tasks (unblocked)
+  ai t ID     Take task → in_progress
+  ai d ID     Done → close task
+  ai n words  New task (no quotes)
+  ai i ID     Show task details
+
+TMUX
+  ai w        List windows
+  ai w N      Switch to window N
+  ai p N      Peek pane N (last 15 lines)
+  ai k N      Send Ctrl-C to pane N
+
+CONTEXT & SYNC
+  ai l        Recent aio-context log
+  ai h words  Handoff message (no quotes)
+  ai f        bd sync --flush-only
+
+  ai ?        This help card
+
+IDs: bare short-id auto-prefixed
+     "htu" → "AI-Tools-htu"
+EOF
+}
+
+# --- Dispatch ---
+cmd="${1:-s}"
+shift || true
+
+case "$cmd" in
+    s|status)   cmd_status ;;
+    c|x|g|a|o|q) cmd_launch "$cmd" "$@" ;;
+    r|ready)    cmd_ready ;;
+    t|take)     cmd_take "$@" ;;
+    d|done)     cmd_done "$@" ;;
+    n|new)      cmd_new "$@" ;;
+    i|info)     cmd_info "$@" ;;
+    w|windows)  cmd_windows "$@" ;;
+    p|peek)     cmd_peek "$@" ;;
+    k|kill)     cmd_kill "$@" ;;
+    l|log)      cmd_log ;;
+    h|handoff)  cmd_handoff "$@" ;;
+    f|flush)    cmd_flush ;;
+    \?|help|--help|-h) cmd_help ;;
+    *)          die "unknown: $cmd (try ai ?)" ;;
+esac

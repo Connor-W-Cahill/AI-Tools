@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Orchestrator State",
+  "description": "Global coordination state for multi-AI CLI tool orchestration",
+
+  "definitions": {
+    "instance": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique instance ID (tool-timestamp-random)" },
+        "tool": { "type": "string", "enum": ["claude", "codex", "gemini", "amp", "opencode"] },
+        "project": { "type": "string", "description": "Project path or identifier" },
+        "pid": { "type": "integer", "description": "Process ID if available" },
+        "status": { "type": "string", "enum": ["active", "idle", "working", "stale"] },
+        "currentTask": { "type": "string", "description": "Brief description of current work" },
+        "beadsIssue": { "type": "string", "description": "Associated beads issue ID if any" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "lastHeartbeat": { "type": "string", "format": "date-time" },
+        "claims": { "type": "array", "items": { "type": "string" }, "description": "File/region claims" }
+      },
+      "required": ["id", "tool", "status", "startedAt", "lastHeartbeat"]
+    },
+
+    "claim": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Claim ID" },
+        "instanceId": { "type": "string", "description": "Owning instance" },
+        "type": { "type": "string", "enum": ["file", "directory", "pattern", "task"] },
+        "target": { "type": "string", "description": "What is claimed (path, glob, task ID)" },
+        "project": { "type": "string", "description": "Project scope" },
+        "exclusive": { "type": "boolean", "default": true },
+        "claimedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "instanceId", "type", "target", "claimedAt"]
+    },
+
+    "contextEntry": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project": { "type": "string" },
+        "category": { "type": "string", "enum": ["decision", "pattern", "learning", "warning", "handoff"] },
+        "content": { "type": "string" },
+        "source": { "type": "string", "description": "Which AI tool added this" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "Optional TTL" }
+      },
+      "required": ["id", "category", "content", "source", "createdAt"]
+    }
+  }
+}

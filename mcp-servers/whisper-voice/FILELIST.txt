@@ -1,0 +1,28 @@
+Whisper Voice MCP Server - Complete File Listing
+=================================================
+
+Location: /home/connor/.claude/mcp-servers/whisper-voice/
+
+Core Implementation Files:
+- server.py (400 lines) - Main MCP server with Whisper integration
+- requirements.txt (21 lines) - Python dependencies
+
+Installation & Testing:
+- setup.sh (88 lines) - Automated installation script
+- test_server.sh (110 lines) - Verification test suite
+- .gitignore - Git ignore patterns
+
+Documentation (2,000+ lines):
+- INDEX.md - Documentation navigation guide
+- QUICKSTART.md - 5-minute setup guide
+- README.md - Complete reference documentation
+- USAGE_EXAMPLES.md - Detailed usage patterns and tips
+- MIGRATION_GUIDE.md - Google Speech → Whisper migration
+- ARCHITECTURE.md - Technical deep-dive
+- PROJECT_SUMMARY.md - Project overview
+
+Model Cache:
+- models/ - Directory for Whisper model storage
+  (Models auto-download on first use)
+
+Total Project: 3,392 lines of code and documentation

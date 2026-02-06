@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+#
+# aio-inject - Inject orchestration instructions into a project
+# Makes all AI tools aware of the coordination system
+#
+# Usage:
+#   aio-inject [project-path]
+
+set -euo pipefail
+
+AIO_DIR="${AIO_DIR:-$HOME/.ai-orchestrator}"
+PROJECT_DIR="${1:-$(pwd)}"
+INSTRUCTIONS_DIR="$AIO_DIR/tool-instructions"
+
+echo "Injecting AI orchestration instructions into: $PROJECT_DIR"
+echo ""
+
+# Function to append if not already present
+inject_if_missing() {
+    local file="$1"
+    local marker="# Multi-AI Orchestration"
+    local content="$2"
+
+    if [[ -f "$file" ]]; then
+        if grep -q "$marker" "$file" 2>/dev/null; then
+            echo "  [skip] $file (already has orchestration instructions)"
+            return
+        fi
+        echo "" >> "$file"
+        echo "$content" >> "$file"
+        echo "  [updated] $file"
+    else
+        echo "$content" > "$file"
+        echo "  [created] $file"
+    fi
+}
+
+# Claude Code: CLAUDE.md
+CLAUDE_CONTENT=$(cat << 'EOF'
+# Multi-AI Orchestration
+
+**This project uses multi-AI coordination.** Other AI tools (Codex, Gemini, Amp) may be active.
+
+## Before Editing Files
+
+```bash
+~/.ai-orchestrator/bin/aio status          # Check active AIs
+~/.ai-orchestrator/bin/aio register claude  # Register yourself
+~/.ai-orchestrator/bin/aio claim file <path>  # Claim before editing
+```
+
+## When Done
+
+```bash
+~/.ai-orchestrator/bin/aio release all
+~/.ai-orchestrator/bin/aio-context handoff "summary"
+~/.ai-orchestrator/bin/aio unregister
+```
+
+**Rule**: Never edit files claimed by other AIs. Check `aio status` first.
+EOF
+)
+
+# Codex: AGENTS.md or .codex/AGENTS.md
+CODEX_CONTENT=$(cat << 'EOF'
+# Multi-AI Orchestration
+
+**Coordination required** - Claude, Gemini, Amp may be active.
+
+Before work: `~/.ai-orchestrator/bin/aio register codex && aio status`
+Before edits: `~/.ai-orchestrator/bin/aio claim file <path>`
+When done: `~/.ai-orchestrator/bin/aio release all && aio unregister`
+
+Never edit files claimed by other AIs.
+EOF
+)
+
+# Gemini: GEMINI.md
+GEMINI_CONTENT=$(cat << 'EOF'
+# Multi-AI Orchestration
+
+This project coordinates Claude, Codex, and Amp.
+
+**Required before editing:**
+```bash
+~/.ai-orchestrator/bin/aio status
+~/.ai-orchestrator/bin/aio register gemini
+~/.ai-orchestrator/bin/aio claim file <path>
+```
+
+**When done:**
+```bash
+~/.ai-orchestrator/bin/aio release all
+~/.ai-orchestrator/bin/aio unregister
+```
+EOF
+)
+
+echo "Injecting instructions..."
+
+# Inject into project root files
+inject_if_missing "$PROJECT_DIR/CLAUDE.md" "$CLAUDE_CONTENT"
+inject_if_missing "$PROJECT_DIR/GEMINI.md" "$GEMINI_CONTENT"
+
+# AGENTS.md (used by Codex and others)
+if [[ -f "$PROJECT_DIR/AGENTS.md" ]]; then
+    inject_if_missing "$PROJECT_DIR/AGENTS.md" "$CODEX_CONTENT"
+else
+    inject_if_missing "$PROJECT_DIR/AGENTS.md" "$CODEX_CONTENT"
+fi
+
+# Create .codex directory if using Codex
+mkdir -p "$PROJECT_DIR/.codex"
+inject_if_missing "$PROJECT_DIR/.codex/ORCHESTRATION.md" "$(cat "$INSTRUCTIONS_DIR/CODEX.md")"
+
+# Create .claude directory instructions
+mkdir -p "$PROJECT_DIR/.claude"
+inject_if_missing "$PROJECT_DIR/.claude/ORCHESTRATION.md" "$(cat "$INSTRUCTIONS_DIR/CLAUDE.md")"
+
+# Create shared instructions file
+mkdir -p "$PROJECT_DIR/.ai-orchestrator"
+cp "$INSTRUCTIONS_DIR/SHARED_AI_INSTRUCTIONS.md" "$PROJECT_DIR/.ai-orchestrator/INSTRUCTIONS.md"
+echo "  [created] .ai-orchestrator/INSTRUCTIONS.md"
+
+echo ""
+echo "Done! All AI tools will now see orchestration instructions."
+echo ""
+echo "How each tool finds them:"
+echo "  Claude  → CLAUDE.md, .claude/ORCHESTRATION.md"
+echo "  Codex   → AGENTS.md, .codex/ORCHESTRATION.md"
+echo "  Gemini  → GEMINI.md"
+echo "  All     → .ai-orchestrator/INSTRUCTIONS.md"

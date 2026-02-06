@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "task-state": {
+      "command": "python3",
+      "args": [
+        "/home/connor/.claude/mcp-servers/task-state/server.py"
+      ],
+      "env": {}
+    }
+  }
+}

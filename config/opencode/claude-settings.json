@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "voice": {
+      "command": "python3",
+      "args": ["/home/connor/voice-mcp-server/server.py"]
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash*",
+      "Edit*",
+      "Write*",
+      "mcp__*"
+    ]
+  }
+}

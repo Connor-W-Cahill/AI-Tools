@@ -1,0 +1,15 @@
+[Unit]
+Description=Voice Command Interface for AI Tools
+After=graphical-session.target
+
+[Service]
+Type=simple
+User=connor
+Environment=DISPLAY=:0
+WorkingDirectory=/home/connor/AI-Tools/voice-interface
+ExecStart=/usr/bin/python3 /home/connor/AI-Tools/voice-interface/voice_interface.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

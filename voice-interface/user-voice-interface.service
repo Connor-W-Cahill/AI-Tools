@@ -1,0 +1,15 @@
+[Unit]
+Description=Voice Dispatcher for AI tmux windows
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
+WorkingDirectory=/home/connor/AI-Tools/voice-interface
+ExecStart=/usr/bin/python3 /home/connor/AI-Tools/voice-interface/voice_dispatcher.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
