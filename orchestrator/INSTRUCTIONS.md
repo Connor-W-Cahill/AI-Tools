@@ -43,6 +43,7 @@ aio claim task AI-Tools-abc
 - Call `aio heartbeat` periodically (every few minutes)
 - Update your current task: `aio task "working on X" "AI-Tools-abc"`
 - Share important learnings: `aio-context learning "discovered X works better than Y"`
+- Use GitHub issues + branches + PRs for tracked work
 
 ## Finishing Work
 
