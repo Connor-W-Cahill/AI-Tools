@@ -8,7 +8,7 @@ BRIEF="${HUB_DIR}/context/current.md"
 
 if [ -f "$BRIEF" ]; then
   prompt=$(printf "Use the following context as current working memory.\n\n%s" "$(cat "$BRIEF")")
-  exec codex "$prompt" "$@"
+  exec codex --full-auto "$prompt" "$@"
 else
-  exec codex "$@"
+  exec codex --full-auto "$@"
 fi

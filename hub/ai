@@ -105,6 +105,17 @@ tool_bin() {
     esac
 }
 
+# Extra flags for full-access mode (applied when not using context wrappers)
+tool_flags() {
+    case "$1" in
+        claude)   echo "--dangerously-skip-permissions" ;;
+        codex)    echo "--full-auto" ;;
+        gemini)   echo "-y" ;;
+        amp)      echo "--trust-tools" ;;
+        *)        echo "" ;;
+    esac
+}
+
 # --- Commands ---
 
 cmd_status() {
@@ -258,7 +269,14 @@ cmd_launch() {
 
     command -v "$bin" &>/dev/null || die "$name ($bin) not found"
 
-    info "launching $name (auto-lifecycle)"
+    # Context wrappers already include full-access flags.
+    # For tools without wrappers, inject flags here.
+    local extra_flags=""
+    if [[ "$bin" != *"-with-context"* ]]; then
+        extra_flags=$(tool_flags "$name")
+    fi
+
+    info "launching $name (full-access, auto-lifecycle)"
     (
         # Register with orchestrator
         "$AIO" register "$name" "$(pwd)" 2>/dev/null || true
@@ -279,8 +297,9 @@ cmd_launch() {
         ) &
         local hb_pid=$!
 
-        # Run the tool
-        "$bin" "$@" || true
+        # Run the tool with full-access flags
+        # shellcheck disable=SC2086
+        "$bin" $extra_flags "$@" || true
 
         # Kill heartbeat
         kill "$hb_pid" 2>/dev/null || true
@@ -296,13 +315,14 @@ STATUS
   ai          Dashboard (AIs+tasks+tmux)
   ai s        Same as above
 
-LAUNCH AI (auto register/unregister)
-  ai c [args] Claude
-  ai x [args] Codex
-  ai g [args] Gemini
-  ai a [args] Amp
+LAUNCH AI (full-access, auto register/unregister)
+  ai c [args] Claude  (--dangerously-skip-permissions)
+  ai x [args] Codex   (--full-auto)
+  ai g [args] Gemini  (-y yolo mode)
+  ai a [args] Amp     (--trust-tools)
   ai o [args] OpenCode
   ai q [args] Qwen
+  ai ad [args] Aider
 
 TASKS (beads)
   ai r        Ready tasks (unblocked)

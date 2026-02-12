@@ -1,8 +1,9 @@
 # Aider configuration for AI-Tools project
 # Docs: https://aider.chat/docs/config/aider_conf.html
 
-# Model settings — use LiteLLM proxy for unified access
-model: openai/claude-sonnet
+# Default model — cheap for everyday edits
+# Override with: aider --model openai/claude-sonnet (for complex work)
+model: openai/claude-haiku
 openai-api-base: http://localhost:4000
 openai-api-key: not-needed
 

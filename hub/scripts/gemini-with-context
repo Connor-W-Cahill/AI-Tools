@@ -8,7 +8,7 @@ BRIEF="${HUB_DIR}/context/current.md"
 
 if [ -f "$BRIEF" ]; then
   prompt=$(printf "Use the following context as current working memory.\n\n%s" "$(cat "$BRIEF")")
-  exec gemini --prompt-interactive "$prompt" "$@"
+  exec gemini -y --prompt-interactive "$prompt" "$@"
 else
-  exec gemini "$@"
+  exec gemini -y "$@"
 fi
