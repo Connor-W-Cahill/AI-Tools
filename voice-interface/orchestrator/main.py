@@ -175,42 +175,30 @@ class Orchestrator:
                    "jarvis end", "jarvis stop", "that's all", "thats all",
                    "never mind", "nevermind", "dismiss"]
 
-    # Intent → quick spoken acknowledgment (played while Codex thinks)
-    QUICK_RESPONSES = [
-        (["check", "status", "how is", "how's", "what's happening", "progress"],
-         "Checking on that."),
-        (["tell", "send", "ask", "assign", "have"],
-         "Sending that now."),
-        (["screen", "see", "looking at", "what's on", "display", "showing", "browser"],
-         "Looking at your screen."),
-        (["click", "type", "fill", "mouse", "press", "open", "close", "scroll"],
-         "Working on it."),
-        (["switch", "go to", "focus"],
-         "Switching."),
-        (["cancel", "stop", "kill"],
-         "Cancelling."),
-    ]
+    # Keywords that indicate a complex/screen request requiring full context
+    ACTION_KEYWORDS = {"click", "type", "open", "mouse", "screen", "browser", "window",
+                       "scroll", "fill", "form", "cursor", "move", "press", "close",
+                       "focus", "switch", "tab", "desktop", "display", "launch", "run"}
+
+    @staticmethod
+    def _classify_complexity(text: str) -> str:
+        """Classify whether a request needs full screen context or a quick answer."""
+        words = text.lower().split()
+        if any(w in Orchestrator.ACTION_KEYWORDS for w in words):
+            return "full"
+        if len(words) <= 12:
+            return "quick"
+        return "full"
 
     def _is_end_command(self, text: str) -> bool:
         """Check if the user wants to end the conversation."""
         t = text.lower().strip().strip(".,!?")
         return any(phrase in t for phrase in self.END_PHRASES)
 
-    def _quick_ack(self, text: str):
-        """Play an intent-based quick response while thinking."""
-        t = text.lower()
-        for keywords, response in self.QUICK_RESPONSES:
-            if any(kw in t for kw in keywords):
-                self.tts.speak_async(response)
-                return
-        # Default
-        self.tts.play_cached("thinking")
-
     def _conversation_turn(self, wake_text: str = ""):
         """Multi-turn conversation loop. Keeps listening until user says end or silence timeout."""
         try:
             self.wake_detector.pause()
-            self.tts.play_cached_sync("ack")
 
             while True:
                 user_text = self._listen_for_command()
@@ -231,11 +219,9 @@ class Orchestrator:
                     print(f"[Orchestrator] Fast route ({action}): {response}", flush=True)
                     self.tts.speak(response)
                 else:
-                    # Play intent-based quick ack while Codex processes
-                    self._quick_ack(user_text)
-
-                    print("[Orchestrator] Thinking (Codex)...", flush=True)
-                    response = self.brain.think(user_text)
+                    complexity = self._classify_complexity(user_text)
+                    print(f"[Orchestrator] Thinking (Codex, {complexity})...", flush=True)
+                    response = self.brain.think(user_text, mode=complexity)
                     print(f"[Orchestrator] Response: {response}", flush=True)
                     if response:
                         self.tts.speak(response)
@@ -329,10 +315,7 @@ class Orchestrator:
         signal_thread = threading.Thread(target=self._watch_signal_file, daemon=True)
         signal_thread.start()
 
-        # Announce ready BEFORE starting wake word detection
-        self.tts.play_cached_sync("ready")
-
-        # Start wake word detection after announcement finishes
+        # Start wake word detection
         self.wake_detector.start()
         print("[Orchestrator] Running. Say 'Hey Claude' or press hotkey.", flush=True)
 

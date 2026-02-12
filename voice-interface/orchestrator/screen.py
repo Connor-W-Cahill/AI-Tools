@@ -28,6 +28,56 @@ def _get_openai_token() -> Optional[str]:
         return None
 
 
+def get_mouse_position() -> str:
+    """Get current mouse cursor position via xdotool."""
+    try:
+        r = subprocess.run(
+            ["xdotool", "getmouselocation", "--shell"],
+            capture_output=True, text=True, timeout=3,
+            env={**os.environ, "DISPLAY": ":0"}
+        )
+        if r.returncode == 0:
+            x = y = ""
+            for line in r.stdout.splitlines():
+                if line.startswith("X="):
+                    x = line.split("=", 1)[1]
+                elif line.startswith("Y="):
+                    y = line.split("=", 1)[1]
+            if x and y:
+                return f"Mouse: ({x}, {y})"
+    except Exception:
+        pass
+    return ""
+
+
+_screen_geometry_cache: Optional[str] = None
+
+
+def get_screen_geometry() -> str:
+    """Get screen resolution via xdpyinfo. Cached (resolution doesn't change mid-session)."""
+    global _screen_geometry_cache
+    if _screen_geometry_cache is not None:
+        return _screen_geometry_cache
+    try:
+        r = subprocess.run(
+            ["xdpyinfo"],
+            capture_output=True, text=True, timeout=3,
+            env={**os.environ, "DISPLAY": ":0"}
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                if "dimensions:" in line:
+                    # e.g. "  dimensions:    1920x1080 pixels (508x285 millimeters)"
+                    parts = line.split()
+                    idx = parts.index("dimensions:") if "dimensions:" in parts else -1
+                    if idx >= 0 and idx + 1 < len(parts):
+                        _screen_geometry_cache = f"Screen: {parts[idx + 1]}"
+                        return _screen_geometry_cache
+    except Exception:
+        pass
+    return ""
+
+
 def get_windows() -> str:
     """List all open windows with their titles."""
     try:
@@ -122,25 +172,40 @@ def vision_describe(image_path: str, question: str = "Describe what you see on t
         return ""
 
 
-def get_screen_context() -> str:
-    """Build a text summary of what's on screen for the brain."""
+def get_screen_context(include_windows: bool = True, include_geometry: bool = False) -> str:
+    """Build a text summary of what's on screen for the brain.
+
+    Args:
+        include_windows: Include full window list (adds ~50ms).
+        include_geometry: Include screen resolution.
+    """
     parts = []
 
     active = get_active_window()
     if active:
         parts.append(f"Active window: {active}")
 
-    windows = get_windows()
-    if windows:
-        lines = []
-        for line in windows.splitlines():
-            cols = line.split(None, 4)
-            if len(cols) >= 5:
-                lines.append(f"  - {cols[4]}")
-            elif len(cols) >= 4:
-                lines.append(f"  - {cols[3]}")
-        if lines:
-            parts.append("Open windows:\n" + "\n".join(lines))
+    mouse = get_mouse_position()
+    if mouse:
+        parts.append(mouse)
+
+    if include_geometry:
+        geom = get_screen_geometry()
+        if geom:
+            parts.append(geom)
+
+    if include_windows:
+        windows = get_windows()
+        if windows:
+            lines = []
+            for line in windows.splitlines():
+                cols = line.split(None, 4)
+                if len(cols) >= 5:
+                    lines.append(f"  - {cols[4]}")
+                elif len(cols) >= 4:
+                    lines.append(f"  - {cols[3]}")
+            if lines:
+                parts.append("Open windows:\n" + "\n".join(lines))
 
     return "\n".join(parts) if parts else "No screen info available."
 

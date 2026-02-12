@@ -13,11 +13,21 @@ Features:
 
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from typing import List, Optional
 
 from screen import get_screen_context, get_screen_context_with_vision
+from local_llm import classify_intent, quick_answer, _ollama_available
+
+# Add RAG to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'rag'))
+try:
+    from knowledge_base import KnowledgeBase
+    _kb = KnowledgeBase()
+except Exception:
+    _kb = None
 
 
 SYSTEM_CONTEXT = """You are Jarvis, a voice AI orchestrator managing multiple AI assistant instances in tmux windows.
@@ -36,6 +46,7 @@ RULES:
 
 SCREEN & DESKTOP CONTROL:
 - You can see the user's screen — open windows and active app are provided in context
+- Mouse position and screen resolution are provided in context when available
 - You can take a screenshot: scrot /tmp/screen.png
 - You can OCR it: tesseract /tmp/screen.png stdout
 - KEYBOARD CONTROL: xdotool type --delay 50 "text to type"
@@ -49,6 +60,7 @@ SCREEN & DESKTOP CONTROL:
 - GET ACTIVE WINDOW: xdotool getactivewindow getwindowname
 - IMPORTANT: When using xdotool to type or click, make sure the right window is focused first
 - You can combine: xdotool search --name "Firefox" windowactivate --sync && xdotool type "hello"
+- LAUNCH APPS/URLS: xdg-open "https://example.com" or xdg-open /path/to/file
 
 CONVERSATION:
 - You have memory of previous exchanges in this conversation (shown below)
@@ -67,19 +79,60 @@ class Brain:
         self.pane_monitor = pane_monitor
         self.history: List[dict] = []
 
-    def think(self, user_text: str) -> str:
-        """Send user message to Codex and get a response."""
-        # Always include basic screen context
-        screen_ctx = get_screen_context()
+    def think(self, user_text: str, mode: str = "full") -> str:
+        """Send user message to Codex and get a response.
 
-        # If user is asking about their screen, include vision analysis
-        screen_keywords = ["screen", "see", "looking at", "open", "running", "browser",
-                           "window", "app", "application", "tab", "showing", "display",
-                           "what's on", "what is on", "desktop", "fill", "form", "click",
-                           "type", "mouse", "cursor"]
-        needs_vision = any(kw in user_text.lower() for kw in screen_keywords)
-        if needs_vision:
-            screen_ctx = get_screen_context_with_vision(user_text)
+        Uses local Ollama model for intent classification and simple queries.
+        Falls back to Codex for complex tasks and actions.
+
+        Args:
+            user_text: What the user said.
+            mode: "quick" for simple questions (no screen context, 15s timeout),
+                  "full" for complex/screen tasks (full context, 60s timeout).
+        """
+        # ── Local LLM routing (fast path) ────────────────────────────
+        if _ollama_available():
+            intent = classify_intent(user_text)
+            print(f"[Brain] Local intent: {intent}", flush=True)
+
+            if intent == "simple":
+                answer = quick_answer(user_text)
+                if answer:
+                    self.history.append({"user": user_text, "response": answer})
+                    return answer
+
+            if intent == "knowledge" and _kb:
+                results = _kb.search(user_text, n_results=3)
+                if results and results[0].get("distance", 999) < 1.5:
+                    context = "\n".join(r["document"][:200] for r in results)
+                    answer = quick_answer(
+                        f"Based on this context:\n{context}\n\nAnswer: {user_text}"
+                    )
+                    if answer:
+                        self.history.append({"user": user_text, "response": answer})
+                        return answer
+
+            # tmux intent already handled by fast_router upstream
+            # complex and action intents fall through to Codex
+        # ── End local routing ────────────────────────────────────────
+
+        if mode == "quick":
+            # Quick mode: skip screen context entirely
+            screen_ctx = ""
+            timeout = 15
+        else:
+            # Full mode: active window + mouse + window list + geometry
+            screen_ctx = get_screen_context(include_windows=True, include_geometry=True)
+
+            # If user is asking about their screen, include vision analysis
+            screen_keywords = ["screen", "see", "looking at", "open", "running", "browser",
+                               "window", "app", "application", "tab", "showing", "display",
+                               "what's on", "what is on", "desktop", "fill", "form", "click",
+                               "type", "mouse", "cursor"]
+            needs_vision = any(kw in user_text.lower() for kw in screen_keywords)
+            if needs_vision:
+                screen_ctx = get_screen_context_with_vision(user_text)
+            timeout = 60
 
         # Build conversation history string
         history_str = ""
@@ -88,13 +141,29 @@ class Brain:
             for entry in self.history[-MAX_HISTORY:]:
                 history_str += f"User: {entry['user']}\nJarvis: {entry['response']}\n"
 
-        prompt = (
-            f"{SYSTEM_CONTEXT}\n\n"
-            f"CURRENT SCREEN STATE:\n{screen_ctx}\n"
-            f"{history_str}\n"
-            f"The user said: \"{user_text}\"\n\n"
-            f"Do what they asked (run commands if needed), then respond with a SHORT spoken sentence."
-        )
+        prompt_suffix = "Do what they asked (run commands if needed), then respond with a SHORT spoken sentence."
+        if mode == "quick":
+            prompt_suffix = "Be extremely brief — one sentence max."
+
+        prompt_parts = [SYSTEM_CONTEXT]
+        if screen_ctx:
+            prompt_parts.append(f"\nCURRENT SCREEN STATE:\n{screen_ctx}")
+
+        # Inject RAG context if available
+        if _kb:
+            try:
+                rag_results = _kb.search(user_text, n_results=2)
+                relevant = [r for r in rag_results if r.get("distance", 999) < 1.5]
+                if relevant:
+                    rag_ctx = "\n".join(f"- {r['document'][:150]}" for r in relevant)
+                    prompt_parts.append(f"\nRELEVANT KNOWLEDGE:\n{rag_ctx}")
+            except Exception:
+                pass
+
+        if history_str:
+            prompt_parts.append(history_str)
+        prompt_parts.append(f"\nThe user said: \"{user_text}\"\n\n{prompt_suffix}")
+        prompt = "\n".join(prompt_parts)
 
         # Write response to temp file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -111,7 +180,7 @@ class Brain:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=timeout,
                 cwd=os.path.expanduser("~")
             )
 

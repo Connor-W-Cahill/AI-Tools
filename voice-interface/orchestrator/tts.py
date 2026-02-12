@@ -27,11 +27,8 @@ CACHE_DIR = os.path.expanduser("~/.cache/voice-orchestrator/tts")
 
 # Phrases to pre-generate at startup for instant playback
 PRECACHE_PHRASES = {
-    "ack": "Yes?",
-    "thinking": "On it.",
     "busy": "One moment.",
     "listening": "Listening.",
-    "ready": "Orchestrator ready.",
     "error": "Something went wrong.",
 }
 

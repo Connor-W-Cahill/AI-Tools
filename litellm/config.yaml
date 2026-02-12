@@ -1,0 +1,88 @@
+# LiteLLM Proxy Configuration
+# Unified API gateway for Claude, OpenAI, and Ollama models
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+
+model_list:
+  # ── Anthropic (Claude) ──────────────────────────────────────────
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-4-0-20250918
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ── OpenAI ──────────────────────────────────────────────────────
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ── Ollama (local) ─────────────────────────────────────────────
+  - model_name: qwen2.5:3b
+    litellm_params:
+      model: ollama/qwen2.5:3b
+      api_base: http://localhost:11434
+
+  - model_name: ollama-chat
+    litellm_params:
+      model: ollama/qwen2.5:3b
+      api_base: http://localhost:11434
+
+# ── Router settings ───────────────────────────────────────────────
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 120
+
+litellm_settings:
+  # ── Caching (in-memory) ──────────────────────────────────────
+  cache: true
+  cache_params:
+    type: local
+    ttl: 3600
+
+  # ── Observability (Langfuse) ─────────────────────────────────
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+  drop_params: true
+  set_verbose: false
+
+  # ── Retries & timeouts ──────────────────────────────────────
+  num_retries: 2
+  request_timeout: 120
+
+  # ── Fallback chains ─────────────────────────────────────────
+  # claude-sonnet -> gpt-4o -> qwen2.5:3b (local)
+  fallbacks:
+    - claude-sonnet:
+        - gpt-4o
+        - qwen2.5:3b
+    - claude-haiku:
+        - gpt-4o-mini
+        - qwen2.5:3b
+    - claude-opus:
+        - gpt-4o
+        - qwen2.5:3b
+    - gpt-4o:
+        - claude-sonnet
+        - qwen2.5:3b
+    - gpt-4o-mini:
+        - claude-haiku
+        - qwen2.5:3b
+
+general_settings:
+  master_key: null
+  store_model_in_db: false

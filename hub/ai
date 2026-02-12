@@ -68,6 +68,7 @@ tool_name() {
         a) echo "amp"    ;;
         o) echo "opencode" ;;
         q) echo "qwen"   ;;
+        ad) echo "aider" ;;
         *) echo "$1"     ;;
     esac
 }
@@ -81,6 +82,7 @@ tool_bin() {
         amp)      echo "amp"      ;;
         opencode) echo "opencode" ;;
         qwen)     echo "qwen"    ;;
+        aider)    echo "aider"   ;;
         *)        echo "$1"       ;;
     esac
 }
@@ -305,7 +307,7 @@ shift || true
 
 case "$cmd" in
     s|status)   cmd_status ;;
-    c|x|g|a|o|q) cmd_launch "$cmd" "$@" ;;
+    c|x|g|a|o|q|ad) cmd_launch "$cmd" "$@" ;;
     r|ready)    cmd_ready ;;
     t|take)     cmd_take "$@" ;;
     d|done)     cmd_done "$@" ;;
