@@ -37,14 +37,36 @@ orchestrator/bin/aio release all
 orchestrator/bin/aio unregister
 ```
 
+## Local AI Infrastructure
+
+Available services:
+
+| Service | URL | Purpose |
+|---|---|---|
+| **LiteLLM Proxy** | `http://localhost:4000` | Unified API — routes to Claude, GPT-4o, Ollama with fallback chains |
+| **Ollama** | `http://localhost:11434` | Local LLM (qwen2.5:3b) on GPU, embedding model |
+| **Open WebUI** | `http://localhost:3000` | Chat UI for Ollama models |
+| **Langfuse** | `http://localhost:3001` | LLM observability dashboard |
+| **n8n** | `http://localhost:5678` | Workflow automation |
+
+### RAG Knowledge Base
+Search project history semantically:
+```bash
+python3 ~/AI-Tools/rag/knowledge_base.py search "<query>"
+```
+
 ## Project Layout
 
 - `orchestrator/` — Multi-AI coordination (aio CLI, hooks, integrations)
-- `hub/` — `ai` mobile-SSH launcher script + bash completions
+- `hub/` — Context-aware AI launcher, memory, templates, runbooks
 - `mcp-servers/` — MCP servers (whisper-voice, task-state)
 - `agents/` — Shared agent definitions (*.md)
 - `config/` — Templates for AI tool configs
 - `voice-interface/` — Jarvis voice assistant daemon
+- `rag/` — ChromaDB RAG knowledge base
+- `litellm/` — LiteLLM proxy config
+- `langfuse/` — Langfuse Docker Compose
+- `n8n/` — n8n workflow data
 
 ## Skills (Agents)
 

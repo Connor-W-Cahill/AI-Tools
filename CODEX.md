@@ -1,6 +1,6 @@
 # AI-Tools — Multi-AI Orchestration
 
-**This project uses multi-AI coordination.** Other AI tools (Codex, Gemini, Amp) may be active.
+This project coordinates Claude, Codex, Gemini, and Amp.
 
 ## Hub Context (Required)
 
@@ -11,8 +11,8 @@ All AI tools must use the Hub as the source of truth:
 
 Always launch via `hub/ai` or the context-aware wrappers:
 ```bash
-ai c        # Claude with Hub context
 ai x        # Codex with Hub context
+ai c        # Claude with Hub context
 ai g        # Gemini with Hub context
 ai b        # Generate fresh daily brief
 ```
@@ -24,47 +24,35 @@ Use GitHub for all tracked work:
 - Use branches for changes
 - Open PRs for reviews/merges
 
-## Before Editing Files
-
+**Required before editing:**
 ```bash
-orchestrator/bin/aio status          # Check active AIs
-orchestrator/bin/aio register claude  # Register yourself
-orchestrator/bin/aio claim file <path>  # Claim before editing
+orchestrator/bin/aio status
+orchestrator/bin/aio register codex
+orchestrator/bin/aio claim file <path>
 ```
 
-## When Done
-
+**When done:**
 ```bash
 orchestrator/bin/aio release all
-orchestrator/bin/aio-context handoff "summary"
 orchestrator/bin/aio unregister
 ```
 
-**Rule**: Never edit files claimed by other AIs. Check `aio status` first.
-
 ## Local AI Infrastructure
 
-Available services for all agents to use:
+Available services:
 
 | Service | URL | Purpose |
 |---|---|---|
 | **LiteLLM Proxy** | `http://localhost:4000` | Unified API — routes to Claude, GPT-4o, Ollama with fallback chains |
-| **Ollama** | `http://localhost:11434` | Local LLM (qwen2.5:3b) on GPU, embedding model (nomic-embed-text) |
+| **Ollama** | `http://localhost:11434` | Local LLM (qwen2.5:3b) on GPU, embedding model |
 | **Open WebUI** | `http://localhost:3000` | Chat UI for Ollama models |
-| **Langfuse** | `http://localhost:3001` | LLM observability dashboard (auto-tracks LiteLLM requests) |
+| **Langfuse** | `http://localhost:3001` | LLM observability dashboard |
 | **n8n** | `http://localhost:5678` | Workflow automation |
 
-### Using LiteLLM Proxy
-Any OpenAI-compatible client can use `http://localhost:4000/v1` as the base URL:
-- Models: `claude-sonnet`, `claude-haiku`, `claude-opus`, `gpt-4o`, `gpt-4o-mini`, `qwen2.5:3b`
-- No API key required (open proxy)
-
 ### RAG Knowledge Base
-Search project history and documentation semantically:
+Search project history semantically:
 ```bash
 python3 ~/AI-Tools/rag/knowledge_base.py search "<query>"
-python3 ~/AI-Tools/rag/knowledge_base.py stats
-python3 ~/AI-Tools/rag/knowledge_base.py reindex
 ```
 
 ## Project Layout
@@ -73,15 +61,12 @@ python3 ~/AI-Tools/rag/knowledge_base.py reindex
 - `hub/` — Context-aware AI launcher, memory, templates, runbooks
 - `mcp-servers/` — MCP servers (whisper-voice, task-state)
 - `agents/` — Shared agent definitions (*.md)
-- `config/` — Templates for AI tool configs (opencode, ralph)
+- `config/` — Templates for AI tool configs
 - `voice-interface/` — Jarvis voice assistant daemon
 - `rag/` — ChromaDB RAG knowledge base
-- `litellm/` — LiteLLM proxy config and env
+- `litellm/` — LiteLLM proxy config
 - `langfuse/` — Langfuse Docker Compose
 - `n8n/` — n8n workflow data
-- `prompts/` — System prompts
-- `docs/` — Project documentation
-- `.beads/` — Task tracking (bd)
 
 ## Skills (Agents)
 

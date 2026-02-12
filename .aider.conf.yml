@@ -1,0 +1,22 @@
+# Aider configuration for AI-Tools project
+# Docs: https://aider.chat/docs/config/aider_conf.html
+
+# Model settings — use LiteLLM proxy for unified access
+model: openai/claude-sonnet
+openai-api-base: http://localhost:4000
+openai-api-key: not-needed
+
+# Git settings
+auto-commits: true
+dirty-commits: true
+attribute-author: true
+attribute-committer: false
+
+# Editor settings
+edit-format: diff
+stream: true
+pretty: true
+
+# Context
+map-tokens: 1024
+map-refresh: auto
