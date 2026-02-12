@@ -11,6 +11,28 @@ cd ~/AI-Tools
 ./setup.sh --voice  # Also install Jarvis voice assistant
 ```
 
+## Hub (Context + Memory)
+
+The Hub is the single source of truth for cross-tool memory and context:
+- `hub/context/current.md` — daily brief
+- `hub/memory/*.md` — persistent memory
+- `hub/templates/` — runbooks, research, school templates
+
+Always launch AI tools via `hub/ai` (or the context-aware wrappers):
+```bash
+ai x   # Codex
+ai c   # Claude
+ai g   # Gemini
+ai b   # Refresh brief
+```
+
+## GitHub Workflow
+
+Use GitHub for all tracked work:
+- Create issues for tasks
+- Use branches for changes
+- Open PRs for reviews/merges
+
 ## Components
 
 | Directory | What |

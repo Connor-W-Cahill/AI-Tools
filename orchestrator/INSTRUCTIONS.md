@@ -2,6 +2,11 @@
 
 ## Before Starting Any Task
 
+0. Refresh Hub context:
+   ```bash
+   /home/connor/AI-Tools/hub/scripts/generate-brief.sh
+   ```
+
 1. Register with orchestrator:
    ```bash
    source ~/.ai-orchestrator/integrations/<your-tool>-hook.sh
@@ -67,4 +72,3 @@ If you encounter a claimed file:
 1. Check who owns it: `aio check <path>`
 2. Either wait, or coordinate via handoff notes
 3. In emergencies, `aio cleanup` removes stale (5min+) claims
-

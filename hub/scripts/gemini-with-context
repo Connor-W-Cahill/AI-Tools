@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HUB_DIR="${HUB_DIR:-/home/connor/AI-Tools/hub}"
+BRIEF="${HUB_DIR}/context/current.md"
+
+"${HUB_DIR}/scripts/generate-brief.sh" >/dev/null
+
+if [ -f "$BRIEF" ]; then
+  prompt=$(printf "Use the following context as current working memory.\n\n%s" "$(cat "$BRIEF")")
+  exec gemini --prompt-interactive "$prompt" "$@"
+else
+  exec gemini "$@"
+fi

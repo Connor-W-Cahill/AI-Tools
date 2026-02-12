@@ -76,9 +76,27 @@ tool_name() {
 # Map tool name to binary
 tool_bin() {
     case "$1" in
-        claude)   echo "claude"   ;;
-        codex)    echo "codex"    ;;
-        gemini)   echo "gemini"   ;;
+        claude)
+            if [[ -x "$AI_TOOLS_DIR/hub/scripts/claude-with-context" ]]; then
+                echo "$AI_TOOLS_DIR/hub/scripts/claude-with-context"
+            else
+                echo "claude"
+            fi
+            ;;
+        codex)
+            if [[ -x "$AI_TOOLS_DIR/hub/scripts/codex-with-context" ]]; then
+                echo "$AI_TOOLS_DIR/hub/scripts/codex-with-context"
+            else
+                echo "codex"
+            fi
+            ;;
+        gemini)
+            if [[ -x "$AI_TOOLS_DIR/hub/scripts/gemini-with-context" ]]; then
+                echo "$AI_TOOLS_DIR/hub/scripts/gemini-with-context"
+            else
+                echo "gemini"
+            fi
+            ;;
         amp)      echo "amp"      ;;
         opencode) echo "opencode" ;;
         qwen)     echo "qwen"    ;;
@@ -221,6 +239,16 @@ cmd_flush() {
     info "synced"
 }
 
+cmd_brief() {
+    local gen="$AI_TOOLS_DIR/hub/scripts/generate-brief.sh"
+    if [[ -x "$gen" ]]; then
+        "$gen"
+        info "brief ready: $AI_TOOLS_DIR/hub/context/current.md"
+    else
+        die "brief generator missing: $gen"
+    fi
+}
+
 cmd_launch() {
     local letter="$1"; shift
     local name
@@ -293,6 +321,7 @@ CONTEXT & SYNC
   ai l        Recent aio-context log
   ai h words  Handoff message (no quotes)
   ai f        bd sync --flush-only
+  ai b        Generate daily brief (context/current.md)
 
   ai ?        This help card
 
@@ -319,6 +348,7 @@ case "$cmd" in
     l|log)      cmd_log ;;
     h|handoff)  cmd_handoff "$@" ;;
     f|flush)    cmd_flush ;;
+    b|brief)    cmd_brief ;;
     \?|help|--help|-h) cmd_help ;;
     *)          die "unknown: $cmd (try ai ?)" ;;
 esac

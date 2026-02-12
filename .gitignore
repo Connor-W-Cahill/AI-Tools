@@ -16,6 +16,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.log
+.cache/
+hub/context/current.md
+hub/logs/
 node_modules/
 bun.lock
 

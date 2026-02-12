@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HUB_DIR="${HUB_DIR:-/home/connor/AI-Tools/hub}"
+BRIEF="${HUB_DIR}/context/current.md"
+
+"${HUB_DIR}/scripts/generate-brief.sh" >/dev/null
+
+if [ -f "$BRIEF" ]; then
+  sys=$(cat "$BRIEF")
+  exec claude --append-system-prompt "$sys" "$@"
+else
+  exec claude "$@"
+fi

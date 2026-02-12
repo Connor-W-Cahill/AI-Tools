@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HUB_DIR="${HUB_DIR:-/home/connor/AI-Tools/hub}"
+POLICY_FILE="${HUB_DIR}/policies/desktopctl.json"
+
+if ! command -v xdotool >/dev/null 2>&1; then
+  echo "xdotool not found" >&2
+  exit 1
+fi
+
+if [ ! -f "$POLICY_FILE" ]; then
+  echo "missing policy: $POLICY_FILE" >&2
+  exit 1
+fi
+
+enabled=$(jq -r '.enabled' "$POLICY_FILE")
+log_path=$(jq -r '.log_path' "$POLICY_FILE")
+allowlist=$(jq -r '.allowlist_window_class[]?' "$POLICY_FILE" 2>/dev/null || true)
+denylist=$(jq -r '.denylist_window_class[]?' "$POLICY_FILE" 2>/dev/null || true)
+
+if [ "$enabled" != "true" ]; then
+  echo "desktopctl disabled by policy" >&2
+  exit 1
+fi
+
+current_class() {
+  xdotool getactivewindow getwindowclassname 2>/dev/null || true
+}
+
+check_policy() {
+  local cls
+  cls=$(current_class)
+  if [ -n "$cls" ]; then
+    for d in $denylist; do
+      if [ "$cls" = "$d" ]; then
+        echo "denied window class: $cls" >&2
+        exit 1
+      fi
+    done
+    if [ -n "$allowlist" ]; then
+      local ok=0
+      for a in $allowlist; do
+        if [ "$cls" = "$a" ]; then
+          ok=1
+        fi
+      done
+      if [ "$ok" -ne 1 ]; then
+        echo "window class not allowlisted: $cls" >&2
+        exit 1
+      fi
+    fi
+  fi
+}
+
+log_action() {
+  local msg="$1"
+  printf "%s %s\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$msg" >> "$log_path"
+}
+
+cmd="${1:-}"
+shift || true
+
+check_policy
+
+case "$cmd" in
+  type)
+    log_action "type: $*"
+    xdotool type --delay 1 --clearmodifiers -- "$*"
+    ;;
+  key)
+    log_action "key: $*"
+    xdotool key --clearmodifiers "$*"
+    ;;
+  click)
+    btn="${1:-left}"
+    case "$btn" in
+      left) b=1;;
+      middle) b=2;;
+      right) b=3;;
+      *) b="$btn";;
+    esac
+    log_action "click: $btn"
+    xdotool click "$b"
+    ;;
+  move)
+    x="${1:-}"; y="${2:-}"
+    if [ -z "$x" ] || [ -z "$y" ]; then
+      echo "usage: desktopctl move <x> <y>" >&2
+      exit 1
+    fi
+    log_action "move: $x $y"
+    xdotool mousemove "$x" "$y"
+    ;;
+  sleep)
+    s="${1:-1}"
+    log_action "sleep: $s"
+    sleep "$s"
+    ;;
+  screenshot)
+    out="${1:-}"
+    if [ -z "$out" ]; then
+      echo "usage: desktopctl screenshot <file.png>" >&2
+      exit 1
+    fi
+    log_action "screenshot: $out"
+    if command -v scrot >/dev/null 2>&1; then
+      scrot "$out"
+    elif command -v gnome-screenshot >/dev/null 2>&1; then
+      gnome-screenshot -f "$out"
+    else
+      echo "no screenshot tool found (scrot/gnome-screenshot)" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "usage: desktopctl {type|key|click|move|sleep|screenshot} ..." >&2
+    exit 1
+    ;;
+ esac

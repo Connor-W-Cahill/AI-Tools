@@ -49,6 +49,8 @@ SCREEN & DESKTOP CONTROL:
 - Mouse position and screen resolution are provided in context when available
 - You can take a screenshot: scrot /tmp/screen.png
 - You can OCR it: tesseract /tmp/screen.png stdout
+- Prefer using the Hub desktop controller for logging: /home/connor/AI-Tools/hub/scripts/desktopctl
+- desktopctl supports: type, key, click, move, sleep, screenshot
 - KEYBOARD CONTROL: xdotool type --delay 50 "text to type"
 - KEYBOARD SHORTCUTS: xdotool key ctrl+a, xdotool key Return, xdotool key Tab
 - MOUSE MOVE: xdotool mousemove X Y
@@ -71,6 +73,23 @@ CONVERSATION:
 
 # Max conversation turns to keep in memory
 MAX_HISTORY = 10
+HUB_BRIEF_PATH = "/home/connor/AI-Tools/hub/context/current.md"
+HUB_BRIEF_SCRIPT = "/home/connor/AI-Tools/hub/scripts/generate-brief.sh"
+HUB_BRIEF_MAX_CHARS = 4000
+
+
+def _load_hub_brief() -> str:
+    try:
+        if os.path.isfile(HUB_BRIEF_SCRIPT) and os.access(HUB_BRIEF_SCRIPT, os.X_OK):
+            subprocess.run([HUB_BRIEF_SCRIPT], timeout=5, check=False)
+        if os.path.isfile(HUB_BRIEF_PATH):
+            with open(HUB_BRIEF_PATH, "r") as f:
+                data = f.read().strip()
+            if data:
+                return data[:HUB_BRIEF_MAX_CHARS]
+    except Exception:
+        pass
+    return ""
 
 
 class Brain:
@@ -146,6 +165,9 @@ class Brain:
             prompt_suffix = "Be extremely brief — one sentence max."
 
         prompt_parts = [SYSTEM_CONTEXT]
+        hub_brief = _load_hub_brief()
+        if hub_brief:
+            prompt_parts.append(f"\nHUB CONTEXT (SOURCE OF TRUTH):\n{hub_brief}")
         if screen_ctx:
             prompt_parts.append(f"\nCURRENT SCREEN STATE:\n{screen_ctx}")
 

@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "allowlist_window_class": [],
+  "denylist_window_class": [],
+  "log_path": "/home/connor/AI-Tools/hub/logs/desktop-actions.log"
+}
