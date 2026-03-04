@@ -154,6 +154,78 @@ class TTS:
         )
         proc.wait()
 
+    def speak_streaming(self, sentences):
+        """Play sentences progressively — pre-generates next audio while playing current.
+
+        Takes an iterable of sentence strings (e.g. from Brain.think_streaming).
+        Sentence N+1 is generated during playback of sentence N, so gaps are near-zero.
+        """
+        import queue as _queue
+        import tempfile as _tempfile
+
+        audio_queue = _queue.Queue(maxsize=2)
+        self._cancel = False
+        self._speaking = True
+
+        def _generate_worker():
+            for sentence in sentences:
+                if self._cancel:
+                    break
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                tmp_path = None
+                try:
+                    with _tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                        tmp_path = tmp.name
+                    asyncio.run(self._generate_to_file(sentence, tmp_path))
+                    audio_queue.put(tmp_path)
+                except Exception as e:
+                    print(f"[TTS] Generate error: {e}", flush=True)
+                    if tmp_path:
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+            audio_queue.put(None)  # sentinel
+
+        gen_thread = threading.Thread(target=_generate_worker, daemon=True)
+        gen_thread.start()
+
+        try:
+            while True:
+                try:
+                    path = audio_queue.get(timeout=30)
+                except _queue.Empty:
+                    print("[TTS] Timeout waiting for audio.", flush=True)
+                    break
+                if path is None:
+                    break
+                if self._cancel:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                    break
+                try:
+                    with self._lock:
+                        self._process = subprocess.Popen(
+                            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                    self._process.wait()
+                except Exception as e:
+                    print(f"[TTS] Playback error: {e}", flush=True)
+                finally:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+        finally:
+            self._speaking = False
+            gen_thread.join(timeout=5)
+
     def set_voice(self, voice_key: str):
         """Switch voice by key (default, female, male_us) or full voice name."""
         if voice_key in VOICES:

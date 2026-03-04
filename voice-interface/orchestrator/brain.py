@@ -1,27 +1,33 @@
 """
-Codex CLI brain for the orchestrator.
+Claude API brain for the orchestrator via LiteLLM proxy.
 
-Uses `codex exec` in non-interactive mode to process voice commands.
-Codex has full shell access, so it can run tmux commands, beads, etc. directly.
-No external API key needed — uses Codex's own auth.
+Replaces Codex CLI with direct Claude API calls for speed and reliability.
+  - claude-haiku : quick questions, simple tasks  (~1-2s)
+  - claude-sonnet: complex tasks, tool use         (~2-4s)
 
 Features:
-- Conversation memory (rolling history within a session)
-- Screen awareness (window list + GPT-4o vision)
-- Keyboard/mouse control via xdotool
-"""
+  - Streaming responses -> sentence-by-sentence TTS
+  - Tool use: run_shell, read_pane
+  - Persistent memory across sessions (JarvisMemory)
+  - Conversation history within a session
+  - Fallback to Ollama if LiteLLM unavailable
 
+Uses the requests library for raw HTTP calls to avoid openai SDK version issues.
+"""
+import json
 import os
+import re
 import subprocess
 import sys
-import tempfile
 import time
-from typing import List, Optional
+from typing import Generator, Iterator, List, Optional
+
+import requests
 
 from screen import get_screen_context, get_screen_context_with_vision
 from local_llm import classify_intent, quick_answer, _ollama_available
+from memory import JarvisMemory
 
-# Add RAG to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'rag'))
 try:
     from knowledge_base import KnowledgeBase
@@ -29,61 +35,157 @@ try:
 except Exception:
     _kb = None
 
+# ── Config ──────────────────────────────────────────────────────────────
 
-SYSTEM_CONTEXT = """You are Jarvis, a voice AI orchestrator managing multiple AI assistant instances in tmux windows.
-The user is speaking to you via voice. Your response will be read aloud via text-to-speech.
-
-RULES:
-- Keep responses SHORT and conversational (1-3 sentences max)
-- No markdown, code blocks, bullet points, or formatting — plain spoken English only
-- You have full shell access. Use tmux commands to manage windows.
-- To send a prompt to a window: tmux set-buffer "text" && tmux paste-buffer -t WINDOW && tmux send-keys -t WINDOW Enter
-- To check a window: tmux capture-pane -t WINDOW -p -S -30
-- To list windows: tmux list-windows
-- To switch window: tmux select-window -t WINDOW
-- To cancel: tmux send-keys -t WINDOW C-c
-- For task tracking use the `bd` command (e.g. bd ready, bd list --status=open, bd create, bd close)
-
-SCREEN & DESKTOP CONTROL:
-- You can see the user's screen — open windows and active app are provided in context
-- Mouse position and screen resolution are provided in context when available
-- You can take a screenshot: scrot /tmp/screen.png
-- You can OCR it: tesseract /tmp/screen.png stdout
-- Prefer using the Hub desktop controller for logging: /home/connor/AI-Tools/hub/scripts/desktopctl
-- desktopctl supports: type, key, click, move, sleep, screenshot
-- KEYBOARD CONTROL: xdotool type --delay 50 "text to type"
-- KEYBOARD SHORTCUTS: xdotool key ctrl+a, xdotool key Return, xdotool key Tab
-- MOUSE MOVE: xdotool mousemove X Y
-- MOUSE CLICK: xdotool click 1 (left), xdotool click 3 (right)
-- MOUSE MOVE+CLICK: xdotool mousemove X Y click 1
-- FOCUS WINDOW: xdotool search --name "Firefox" windowactivate
-- SCROLL: xdotool click 4 (up) or click 5 (down)
-- GET MOUSE POSITION: xdotool getmouselocation
-- GET ACTIVE WINDOW: xdotool getactivewindow getwindowname
-- IMPORTANT: When using xdotool to type or click, make sure the right window is focused first
-- You can combine: xdotool search --name "Firefox" windowactivate --sync && xdotool type "hello"
-- LAUNCH APPS/URLS: xdg-open "https://example.com" or xdg-open /path/to/file
-
-CONVERSATION:
-- You have memory of previous exchanges in this conversation (shown below)
-- Reference earlier context naturally — the user doesn't need to repeat themselves
-- When the user says to assign work, send the prompt to the appropriate tmux window
-- When checking status, read the pane output and summarize what's happening
-- NEVER include shell commands in your spoken response — just tell the user what you did or found"""
-
-# Max conversation turns to keep in memory
+LITELLM_URL = "http://localhost:4000"
+QUICK_MODEL = "claude-haiku"
+FULL_MODEL = "claude-sonnet"
 MAX_HISTORY = 10
+MAX_TOOL_ROUNDS = 3
+
 HUB_BRIEF_PATH = "/home/connor/AI-Tools/hub/context/current.md"
 HUB_BRIEF_SCRIPT = "/home/connor/AI-Tools/hub/scripts/generate-brief.sh"
 HUB_BRIEF_MAX_CHARS = 4000
 
+SYSTEM_BASE = """You are Jarvis, a voice AI assistant in a developer's workspace.
+Responses will be read aloud via text-to-speech.
 
-def _load_hub_brief() -> str:
+RESPONSE RULES:
+- SHORT and conversational (1-3 sentences max)
+- No markdown, bullet points, code blocks, asterisks, or special characters
+- Plain spoken English only
+- When running commands: report what you did or found, not the command itself
+
+TOOLS AVAILABLE:
+- run_shell: execute any shell command (tmux, bd, git, xdotool, file ops, etc.)
+- read_pane: quickly read recent output from a tmux window
+
+TMUX WINDOW MANAGEMENT:
+- List: tmux list-windows -F '#{window_index} #{window_name}'
+- Send task: tmux set-buffer "text" && tmux paste-buffer -t N && tmux send-keys -t N Enter
+- Read output: tmux capture-pane -t N -p -S -30
+- Switch to: tmux select-window -t N
+- Cancel: tmux send-keys -t N C-c
+
+TASK TRACKING (beads):
+- bd ready          -> show tasks ready to work on
+- bd list --status=open  -> all open tasks
+- bd create --title="..." --type=task --priority=2
+- bd close <id>     -> mark complete
+- bd show <id>      -> task details
+
+DESKTOP CONTROL:
+- xdotool type --delay 50 "text"
+- xdotool key ctrl+c
+- xdotool mousemove X Y click 1
+- xdotool search --name "App" windowactivate"""
+
+TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_shell",
+            "description": (
+                "Execute a shell command and return its output. "
+                "Use for: tmux window management, bd task tracking, "
+                "xdotool desktop control, git, file operations, system info."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute."
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_pane",
+            "description": "Read recent output from a tmux window without sending anything.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "window": {
+                        "type": "integer",
+                        "description": "tmux window index number"
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "description": "Number of recent lines to read (default 20)",
+                        "default": 20
+                    }
+                },
+                "required": ["window"]
+            }
+        }
+    }
+]
+
+# ── Tool execution ───────────────────────────────────────────────────────
+
+def _run_shell(command):
+    """Execute a shell command and return output (stdout + stderr combined)."""
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=os.path.expanduser("~"),
+            env=os.environ.copy(),
+        )
+        out = result.stdout.strip()
+        err = result.stderr.strip()
+        if out and err:
+            return "{}\n{}".format(out, err)
+        combined = out or err
+        return combined if combined else "(no output)"
+    except subprocess.TimeoutExpired:
+        return "Command timed out after 30 seconds."
+    except Exception as e:
+        return "Error: {}".format(e)
+
+
+def _read_pane(window, lines=20):
+    """Read recent output from a tmux pane."""
+    try:
+        r = subprocess.run(
+            ["tmux", "capture-pane", "-t", str(window), "-p", "-S", "-{}".format(lines)],
+            capture_output=True, text=True, timeout=5
+        )
+        return r.stdout.strip() if r.returncode == 0 else "Couldn't read window {}.".format(window)
+    except Exception as e:
+        return "Error reading pane: {}".format(e)
+
+
+def _execute_tool(name, arguments):
+    """Dispatch a tool call and return its string result."""
+    if name == "run_shell":
+        cmd = arguments.get("command", "")
+        print("[Brain] run_shell: {}".format(cmd[:100]), flush=True)
+        return _run_shell(cmd)
+    elif name == "read_pane":
+        window = arguments.get("window", 0)
+        lines = arguments.get("lines", 20)
+        print("[Brain] read_pane: window={}".format(window), flush=True)
+        return _read_pane(window, lines)
+    return "Unknown tool: {}".format(name)
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────
+
+def _load_hub_brief():
     try:
         if os.path.isfile(HUB_BRIEF_SCRIPT) and os.access(HUB_BRIEF_SCRIPT, os.X_OK):
-            subprocess.run([HUB_BRIEF_SCRIPT], timeout=5, check=False)
+            subprocess.run([HUB_BRIEF_SCRIPT], timeout=5, check=False, capture_output=True)
         if os.path.isfile(HUB_BRIEF_PATH):
-            with open(HUB_BRIEF_PATH, "r") as f:
+            with open(HUB_BRIEF_PATH) as f:
                 data = f.read().strip()
             if data:
                 return data[:HUB_BRIEF_MAX_CHARS]
@@ -92,159 +194,423 @@ def _load_hub_brief() -> str:
     return ""
 
 
+def _extract_sentences(text):
+    """Split text into complete sentences and an incomplete remainder.
+
+    Returns (list_of_sentences, remainder_string).
+    Requires >= 8 chars to avoid splitting on short abbreviations.
+    """
+    sentences = []
+    pattern = re.compile(r'([^.!?]+[.!?]+)\s+')
+    pos = 0
+    for m in pattern.finditer(text):
+        s = m.group(1).strip()
+        if len(s) >= 8:
+            sentences.append(s)
+        pos = m.end()
+    remainder = text[pos:]
+    return sentences, remainder
+
+
+def _litellm_available():
+    """Quick health check for the LiteLLM proxy. Retries once on timeout."""
+    for _ in range(2):
+        try:
+            resp = requests.get("{}/health".format(LITELLM_URL), timeout=4)
+            return resp.status_code == 200
+        except requests.Timeout:
+            continue
+        except Exception:
+            return False
+    return False
+
+
+def _post_completion(payload, timeout):
+    """POST to LiteLLM /chat/completions and return the response object."""
+    return requests.post(
+        "{}/chat/completions".format(LITELLM_URL),
+        json=payload,
+        timeout=timeout,
+        headers={"Content-Type": "application/json"},
+    )
+
+
+# ── Brain ────────────────────────────────────────────────────────────────
+
 class Brain:
     def __init__(self, task_router=None, pane_monitor=None):
         self.task_router = task_router
         self.pane_monitor = pane_monitor
         self.history: List[dict] = []
+        self.memory = JarvisMemory()
 
-    def think(self, user_text: str, mode: str = "full") -> str:
-        """Send user message to Codex and get a response.
+        self._litellm_ok = _litellm_available()
+        print("[Brain] LiteLLM available: {}".format(self._litellm_ok), flush=True)
+        print("[Brain] Session #{}".format(self.memory.session_count), flush=True)
 
-        Uses local Ollama model for intent classification and simple queries.
-        Falls back to Codex for complex tasks and actions.
+    def _ensure_litellm(self):
+        """Re-check availability if previously down."""
+        if not self._litellm_ok:
+            self._litellm_ok = _litellm_available()
+        return self._litellm_ok
 
-        Args:
-            user_text: What the user said.
-            mode: "quick" for simple questions (no screen context, 15s timeout),
-                  "full" for complex/screen tasks (full context, 60s timeout).
+    def _build_system(self, screen_ctx=""):
+        """Build system prompt with memory and optional screen context."""
+        parts = [SYSTEM_BASE]
+
+        mem_str = self.memory.format_for_prompt()
+        if mem_str:
+            parts.append("\n{}".format(mem_str))
+
+        hub = _load_hub_brief()
+        if hub:
+            parts.append("\nHUB CONTEXT (source of truth for project state):\n{}".format(hub))
+
+        if screen_ctx:
+            parts.append("\nSCREEN STATE:\n{}".format(screen_ctx))
+
+        return "\n".join(parts)
+
+    def _build_messages(self, user_text, mode):
+        """Build the messages list for a chat completion request."""
+        if mode == "quick":
+            screen_ctx = ""
+        else:
+            screen_ctx = get_screen_context(include_windows=True)
+            screen_keywords = ["screen", "see", "window", "app", "browser",
+                               "tab", "click", "type", "open", "running", "cursor"]
+            if any(kw in user_text.lower() for kw in screen_keywords):
+                screen_ctx = get_screen_context_with_vision(user_text)
+
+        system = self._build_system(screen_ctx)
+
+        rag_prefix = ""
+        if _kb:
+            try:
+                results = _kb.search(user_text, n_results=2)
+                relevant = [r for r in results if r.get("distance", 999) < 1.5]
+                if relevant:
+                    rag_ctx = "\n".join("- {}".format(r["document"][:150]) for r in relevant)
+                    rag_prefix = "Relevant knowledge:\n{}\n\n".format(rag_ctx)
+            except Exception:
+                pass
+
+        messages = [{"role": "system", "content": system}]
+
+        for entry in self.history[-MAX_HISTORY:]:
+            messages.append({"role": "user", "content": entry["user"]})
+            messages.append({"role": "assistant", "content": entry["response"]})
+
+        messages.append({"role": "user", "content": "{}{}".format(rag_prefix, user_text)})
+        return messages
+
+    def _clean(self, text):
+        """Strip markdown formatting unsuitable for TTS."""
+        text = re.sub(r'```[^`]*```', '', text, flags=re.DOTALL)
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        text = text.replace('**', '').replace('*', '').replace('#', '').strip()
+        if len(text) > 500:
+            text = text[:500].rsplit('.', 1)[0] + '.'
+        return text
+
+    # ── Primary: streaming think ─────────────────────────────────────────
+
+    def think_streaming(self, user_text, mode="full"):
+        """Stream the response as a generator of complete sentences.
+
+        Pipeline: local Ollama fast path -> LiteLLM Claude -> tool use loop
         """
-        # ── Local LLM routing (fast path) ────────────────────────────
+        # ── Local Ollama fast path ───────────────────────────────────
         if _ollama_available():
             intent = classify_intent(user_text)
-            print(f"[Brain] Local intent: {intent}", flush=True)
+            print("[Brain] Local intent: {}".format(intent), flush=True)
 
             if intent == "simple":
                 answer = quick_answer(user_text)
                 if answer:
                     self.history.append({"user": user_text, "response": answer})
-                    return answer
+                    yield answer
+                    return
 
             if intent == "knowledge" and _kb:
                 results = _kb.search(user_text, n_results=3)
                 if results and results[0].get("distance", 999) < 1.5:
-                    context = "\n".join(r["document"][:200] for r in results)
-                    answer = quick_answer(
-                        f"Based on this context:\n{context}\n\nAnswer: {user_text}"
-                    )
+                    ctx = "\n".join(r["document"][:200] for r in results)
+                    answer = quick_answer("Context:\n{}\n\nAnswer: {}".format(ctx, user_text))
                     if answer:
                         self.history.append({"user": user_text, "response": answer})
-                        return answer
+                        yield answer
+                        return
 
-            # tmux intent already handled by fast_router upstream
-            # complex and action intents fall through to Codex
-        # ── End local routing ────────────────────────────────────────
+        if not self._ensure_litellm():
+            fallback = quick_answer(user_text) or "LiteLLM is unavailable right now."
+            yield fallback
+            return
 
-        if mode == "quick":
-            # Quick mode: skip screen context entirely
-            screen_ctx = ""
-            timeout = 15
-        else:
-            # Full mode: active window + mouse + window list + geometry
-            screen_ctx = get_screen_context(include_windows=True, include_geometry=True)
-
-            # If user is asking about their screen, include vision analysis
-            screen_keywords = ["screen", "see", "looking at", "open", "running", "browser",
-                               "window", "app", "application", "tab", "showing", "display",
-                               "what's on", "what is on", "desktop", "fill", "form", "click",
-                               "type", "mouse", "cursor"]
-            needs_vision = any(kw in user_text.lower() for kw in screen_keywords)
-            if needs_vision:
-                screen_ctx = get_screen_context_with_vision(user_text)
-            timeout = 60
-
-        # Build conversation history string
-        history_str = ""
-        if self.history:
-            history_str = "\nCONVERSATION HISTORY:\n"
-            for entry in self.history[-MAX_HISTORY:]:
-                history_str += f"User: {entry['user']}\nJarvis: {entry['response']}\n"
-
-        prompt_suffix = "Do what they asked (run commands if needed), then respond with a SHORT spoken sentence."
-        if mode == "quick":
-            prompt_suffix = "Be extremely brief — one sentence max."
-
-        prompt_parts = [SYSTEM_CONTEXT]
-        hub_brief = _load_hub_brief()
-        if hub_brief:
-            prompt_parts.append(f"\nHUB CONTEXT (SOURCE OF TRUTH):\n{hub_brief}")
-        if screen_ctx:
-            prompt_parts.append(f"\nCURRENT SCREEN STATE:\n{screen_ctx}")
-
-        # Inject RAG context if available
-        if _kb:
-            try:
-                rag_results = _kb.search(user_text, n_results=2)
-                relevant = [r for r in rag_results if r.get("distance", 999) < 1.5]
-                if relevant:
-                    rag_ctx = "\n".join(f"- {r['document'][:150]}" for r in relevant)
-                    prompt_parts.append(f"\nRELEVANT KNOWLEDGE:\n{rag_ctx}")
-            except Exception:
-                pass
-
-        if history_str:
-            prompt_parts.append(history_str)
-        prompt_parts.append(f"\nThe user said: \"{user_text}\"\n\n{prompt_suffix}")
-        prompt = "\n".join(prompt_parts)
-
-        # Write response to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            output_file = f.name
+        model = QUICK_MODEL if mode == "quick" else FULL_MODEL
+        timeout = 20 if mode == "quick" else 60
+        use_tools = (mode != "quick")
 
         try:
-            result = subprocess.run(
-                [
-                    "codex", "exec",
-                    "--dangerously-bypass-approvals-and-sandbox",
-                    "--skip-git-repo-check",
-                    "-o", output_file,
-                    prompt
-                ],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=os.path.expanduser("~")
-            )
+            messages = self._build_messages(user_text, mode)
+            full_response = []
 
-            print(f"[Brain] Codex exit code: {result.returncode}", flush=True)
-            if result.stderr:
-                print(f"[Brain] Codex stderr: {result.stderr[:200]}", flush=True)
+            for sentence in self._stream_sentences(messages, model, timeout, use_tools):
+                sentence = self._clean(sentence)
+                if sentence:
+                    full_response.append(sentence)
+                    yield sentence
 
-            try:
-                with open(output_file, 'r') as f:
-                    response = f.read().strip()
-            except Exception:
-                response = ""
+            combined = " ".join(full_response)
+            self.history.append({"user": user_text, "response": combined})
 
-            if not response:
-                response = result.stdout.strip()
-                lines = response.splitlines()
-                spoken = [l for l in lines if l.strip() and not l.startswith('$') and not l.startswith('+')]
-                response = " ".join(spoken[-3:]) if spoken else "I ran into an issue processing that."
-
-            # Clean up formatting
-            response = response.replace('```', '').replace('**', '').replace('`', '')
-            response = response.replace('#', '').strip()
-
-            if len(response) > 500:
-                response = response[:500].rsplit('.', 1)[0] + '.'
-
-            # Save to conversation memory
-            self.history.append({"user": user_text, "response": response})
-
-            return response
-
-        except subprocess.TimeoutExpired:
-            return "That took too long. Could you try a simpler request?"
         except Exception as e:
-            print(f"[Brain] Error: {e}", flush=True)
-            return "I had trouble processing that."
-        finally:
+            print("[Brain] Streaming error: {}".format(e), flush=True)
+            yield "I had trouble processing that."
+
+    def _stream_sentences(self, messages, model, timeout, use_tools=True):
+        """Yield sentences from LiteLLM responses, executing tool calls as needed.
+
+        Strategy:
+          - No tools (quick mode): true streaming SSE for minimum first-word latency
+          - With tools (full mode): non-streaming to reliably detect tool_calls
+            finish_reason, execute tools, then stream the final text response
+        """
+        msgs = list(messages)
+
+        if not use_tools:
+            yield from self._stream_sse(msgs, model, timeout, payload_extra={})
+            return
+
+        # ── Agentic tool-use loop (non-streaming for reliable detection) ──
+        yielded_anything = False
+        for _round in range(MAX_TOOL_ROUNDS):
+            payload = {
+                "model": model,
+                "messages": msgs,
+                "stream": False,
+                "max_tokens": 400,
+                "temperature": 0.3,
+                "tools": TOOLS_SCHEMA,
+                "tool_choice": "auto",
+            }
             try:
-                os.unlink(output_file)
-            except OSError:
-                pass
+                resp = _post_completion(payload, timeout=timeout)
+                resp.raise_for_status()
+                result = resp.json()
+            except requests.ConnectionError:
+                self._litellm_ok = False
+                yield "I lost connection to my language model."
+                return
+            except Exception as e:
+                print("[Brain] Tool round error: {}".format(e), flush=True)
+                yield "Something went wrong while I was thinking."
+                return
+
+            choice = result["choices"][0]
+            finish_reason = choice.get("finish_reason", "stop")
+            msg = choice.get("message", {})
+
+            if finish_reason != "tool_calls":
+                text = (msg.get("content") or "").strip()
+
+                # Some models (e.g. Ollama qwen) output tool calls as JSON text
+                # instead of structured tool_calls. Detect and handle this.
+                if text and text.strip().startswith('{') and not yielded_anything:
+                    intercepted = self._try_execute_text_tool_call(text)
+                    if intercepted is not None:
+                        msgs.append({"role": "assistant", "content": text})
+                        msgs.append({
+                            "role": "user",
+                            "content": "Result: {}\n\nSummarize in one spoken sentence.".format(
+                                intercepted[:500]
+                            ),
+                        })
+                        use_tools = False  # force text-only on next round
+                        continue
+
+                # Normal text response — yield sentences
+                if text:
+                    sentences, remainder = _extract_sentences(text + " ")
+                    for s in sentences:
+                        yielded_anything = True
+                        yield s
+                    # Only yield remainder if it looks like actual speech
+                    if remainder.strip() and len(remainder.strip()) >= 8:
+                        yielded_anything = True
+                        yield remainder.strip()
+                break
+
+            # Execute tool calls
+            tool_calls = msg.get("tool_calls", [])
+            if not tool_calls:
+                break
+
+            msgs.append({
+                "role": "assistant",
+                "content": msg.get("content") or "",
+                "tool_calls": tool_calls,
+            })
+
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+                result_str = _execute_tool(fn.get("name", ""), args)
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id", ""),
+                    "content": result_str[:3000],
+                })
+
+            # On last round, force a text response (no more tools)
+            if _round == MAX_TOOL_ROUNDS - 2:
+                msgs.append({
+                    "role": "user",
+                    "content": "Now summarize what you found in 1-2 spoken sentences. No tools.",
+                })
+
+        if not yielded_anything:
+            yield "I ran into trouble completing that task."
+
+    @staticmethod
+    def _try_execute_text_tool_call(text):
+        """If text looks like a JSON tool call, execute it and return result.
+
+        Handles models that output {"command": "..."} or {"name": "...", "arguments": ...}
+        as plain text instead of structured tool_calls.
+        Returns result string if executed, None otherwise.
+        """
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+        # Format: {"command": "..."} — direct shell command
+        cmd = parsed.get("command")
+        if cmd and isinstance(cmd, str):
+            return _run_shell(cmd)
+
+        # Format: {"name": "run_shell", "arguments": {"command": "..."}}
+        name = parsed.get("name", "")
+        args = parsed.get("arguments", {})
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
+        if name in ("run_shell", "read_pane") and args:
+            return _execute_tool(name, args)
+
+        return None
+
+    def _stream_sse(self, msgs, model, timeout, payload_extra=None):
+        """True SSE streaming — yields sentences as tokens arrive.
+
+        Used for quick (no-tool) responses for minimum first-word latency.
+        """
+        payload = {
+            "model": model,
+            "messages": msgs,
+            "stream": True,
+            "max_tokens": 400,
+            "temperature": 0.3,
+        }
+        if payload_extra:
+            payload.update(payload_extra)
+
+        try:
+            resp = requests.post(
+                "{}/chat/completions".format(LITELLM_URL),
+                json=payload,
+                stream=True,
+                timeout=timeout,
+                headers={"Content-Type": "application/json"},
+            )
+            resp.raise_for_status()
+        except requests.ConnectionError:
+            self._litellm_ok = False
+            yield "I lost connection to my language model."
+            return
+        except Exception as e:
+            print("[Brain] SSE connect error: {}".format(e), flush=True)
+            yield "Something went wrong while I was thinking."
+            return
+
+        text_buf = ""
+        try:
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    content = chunk["choices"][0].get("delta", {}).get("content") or ""
+                    if content:
+                        text_buf += content
+                        sentences, text_buf = _extract_sentences(text_buf)
+                        for s in sentences:
+                            yield s
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+        except Exception as e:
+            print("[Brain] SSE read error: {}".format(e), flush=True)
+
+        if text_buf.strip():
+            yield text_buf.strip()
+
+    # ── Blocking fallback ────────────────────────────────────────────────
+
+    def think(self, user_text, mode="full"):
+        """Blocking think — collects all streamed sentences into one string."""
+        sentences = list(self.think_streaming(user_text, mode))
+        return " ".join(sentences) if sentences else "I had trouble with that."
+
+    # ── Session end ──────────────────────────────────────────────────────
+
+    def save_session_summary(self):
+        """Ask Claude to summarize the conversation and save it to persistent memory."""
+        if len(self.history) < 2 or not self._ensure_litellm():
+            return
+        try:
+            turns = "\n".join(
+                "User: {}\nJarvis: {}".format(h["user"], h["response"])
+                for h in self.history[-10:]
+            )
+            payload = {
+                "model": QUICK_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Summarize this conversation in 1-2 sentences, "
+                            "focusing on what tasks were completed or topics discussed. "
+                            "Be concise. No markdown."
+                        )
+                    },
+                    {"role": "user", "content": turns}
+                ],
+                "max_tokens": 100,
+                "temperature": 0.1,
+            }
+            resp = _post_completion(payload, timeout=10)
+            resp.raise_for_status()
+            result = resp.json()
+            summary = result["choices"][0]["message"]["content"].strip()
+            if summary:
+                self.memory.add_session_summary(summary)
+                print("[Brain] Session summary saved: {}".format(summary[:80]), flush=True)
+        except Exception as e:
+            print("[Brain] Failed to save session summary: {}".format(e), flush=True)
 
     def reset(self):
-        """Clear conversation memory."""
+        """Clear conversation history and save a summary to persistent memory."""
+        self.save_session_summary()
         self.history.clear()
