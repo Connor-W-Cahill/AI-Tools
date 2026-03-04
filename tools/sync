@@ -1,0 +1,37 @@
+#!/bin/bash
+# tools/sync — Session end: update memory log, sync beads, commit
+# Run manually before ending a session: tools/sync
+# Also called by hooks/session-end.sh
+
+set -e
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$TOOLS_DIR")"
+SESSIONS_DIR="$PROJECT_DIR/memory/sessions"
+TODAY="$(date +%Y-%m-%d)"
+SESSION_FILE="$SESSIONS_DIR/$TODAY.md"
+
+cd "$PROJECT_DIR"
+
+# 1. Append session timestamp to today's log
+mkdir -p "$SESSIONS_DIR"
+if [ ! -f "$SESSION_FILE" ]; then
+  echo "# Session Log — $TODAY" > "$SESSION_FILE"
+  echo "" >> "$SESSION_FILE"
+fi
+echo "## $(date +%H:%M) — Session end" >> "$SESSION_FILE"
+echo "" >> "$SESSION_FILE"
+
+# 2. Sync beads
+if command -v bd &>/dev/null; then
+  bd sync --flush-only 2>/dev/null || true
+fi
+
+# 3. Commit memory changes if any
+if git diff --quiet memory/ && git diff --cached --quiet memory/ 2>/dev/null; then
+  : # no memory changes
+else
+  git add memory/ 2>/dev/null || true
+  git commit -m "chore: update session memory [skip ci]" 2>/dev/null || true
+fi
+
+echo "[sync] Done: memory logged, beads synced"

@@ -1,113 +1,99 @@
-# AI-Tools — Multi-AI Orchestration
+# AI-Tools — Multi-AI Orchestration Workspace
 
-**This project uses multi-AI coordination.** Other AI tools (Codex, Gemini, Amp) may be active.
+## Memory Protocol
 
-## Hub Context (Required)
+Memory auto-loads from `memory/MEMORY.md` each session (symlinked from Claude Code auto-memory).
 
-All AI tools must use the Hub as the source of truth:
-- Context file: `hub/context/current.md`
-- Memory store: `hub/memory/*.md`
-- Workflows/templates: `hub/templates/` and `hub/runbooks/`
+- **Add a fact**: `tools/memory add "key: value"`
+- **Search history**: `python3 rag/knowledge_base.py search "<query>"`
+- **End session**: `tools/sync` (logs session, syncs beads, commits memory)
 
-Always launch via `hub/ai` or the context-aware wrappers:
-```bash
-ai c        # Claude with Hub context
-ai x        # Codex with Hub context
-ai g        # Gemini with Hub context
-ai b        # Generate fresh daily brief
-```
-
-## GitHub Workflow (Required)
-
-Use GitHub for all tracked work:
-- Create issues for tasks
-- Use branches for changes
-- Open PRs for reviews/merges
-
-## Before Editing Files
+## AI Launcher
 
 ```bash
-orchestrator/bin/aio status          # Check active AIs
-orchestrator/bin/aio register claude  # Register yourself
-orchestrator/bin/aio claim file <path>  # Claim before editing
+ai c        # Claude Code (full permissions)
+ai x        # Codex CLI
+ai g        # Gemini CLI
+ai q        # Qwen/Ollama (local)
+ai o        # OpenCode (model router via LiteLLM)
+ai ad       # Aider
+ai ?        # Help
 ```
 
-## When Done
+## Task Tracking (Required)
 
+Use beads for ALL task tracking:
 ```bash
-orchestrator/bin/aio release all
-orchestrator/bin/aio-context handoff "summary"
-orchestrator/bin/aio unregister
+bd ready                              # Find available work
+bd create --title="..." --type=task --priority=2
+bd update <id> --status=in_progress
+bd close <id>
+bd sync                               # Sync at session end
 ```
-
-**Rule**: Never edit files claimed by other AIs. Check `aio status` first.
+**Never use**: TodoWrite, TaskCreate, or markdown TODO files.
 
 ## Local AI Infrastructure
 
-Available services for all agents to use:
-
 | Service | URL | Purpose |
-|---|---|---|
-| **LiteLLM Proxy** | `http://localhost:4000` | Unified API — routes to Claude, GPT-4o, Ollama with fallback chains |
-| **Ollama** | `http://localhost:11434` | Local LLM (qwen2.5:3b) on GPU, embedding model (nomic-embed-text) |
-| **Open WebUI** | `http://localhost:3000` | Chat UI for Ollama models |
-| **Langfuse** | `http://localhost:3001` | LLM observability dashboard (auto-tracks LiteLLM requests) |
-| **n8n** | `http://localhost:5678` | Workflow automation |
+|---------|-----|---------|
+| LiteLLM Proxy | http://localhost:4000 | Unified API (Claude, GPT-4o, Ollama) |
+| Ollama | http://localhost:11434 | Local LLM (qwen2.5:3b) |
+| Open WebUI | http://localhost:3000 | Chat UI |
+| Langfuse | http://localhost:3001 | LLM observability |
+| n8n | http://localhost:5678 | Workflow automation |
 
-### Using LiteLLM Proxy
-Any OpenAI-compatible client can use `http://localhost:4000/v1` as the base URL:
-- Models: `claude-sonnet`, `claude-haiku`, `claude-opus`, `gpt-4o`, `gpt-4o-mini`, `qwen2.5:3b`
-- No API key required (open proxy)
-
-### RAG Knowledge Base
-Search project history and documentation semantically:
-```bash
-python3 ~/AI-Tools/rag/knowledge_base.py search "<query>"
-python3 ~/AI-Tools/rag/knowledge_base.py stats
-python3 ~/AI-Tools/rag/knowledge_base.py reindex
-```
+RAG search: `python3 rag/knowledge_base.py search "<query>"`
 
 ## Project Layout
 
-- `orchestrator/` — Multi-AI coordination (aio CLI, hooks, integrations)
-- `hub/` — Context-aware AI launcher, memory, templates, runbooks
-- `mcp-servers/` — MCP servers (whisper-voice, task-state)
-- `agents/` — Shared agent definitions (*.md)
-- `config/` — Templates for AI tool configs (opencode, ralph)
-- `voice-interface/` — Jarvis voice assistant daemon
-- `rag/` — ChromaDB RAG knowledge base
-- `litellm/` — LiteLLM proxy config and env
-- `langfuse/` — Langfuse Docker Compose
-- `n8n/` — n8n workflow data
-- `prompts/` — System prompts
-- `docs/` — Project documentation
-- `.beads/` — Task tracking (bd)
+```
+tools/          AI launcher (tools/ai) + memory + sync scripts
+hooks/          Claude Code lifecycle hooks (Stop → session-end.sh)
+agents/         Agent definitions (planner, code-reviewer, architect, etc.)
+skills/         Domain knowledge (tdd-workflow, python-patterns, security-review)
+rules/common/   Coding guidelines (coding-style, security, testing, git-workflow)
+rules/steering/ Context injection (devops.md, python.md, research.md, spec.md)
+memory/         Persistent memory (MEMORY.md + sessions/)
+docs/           Architecture, runbooks, getting-started
+mcp-servers/    MCP servers (whisper-voice, task-state)
+voice-interface/ Jarvis voice assistant daemon
+rag/            ChromaDB RAG knowledge base
+litellm/        LiteLLM proxy config + systemd service
+langfuse/       Langfuse Docker Compose
+n8n/            n8n workflow automation
+.beads/         Task tracking (bd)
+```
 
 ## Quality Rules
 
-Rules in `hub/rules/common/` — read before starting work in that domain:
-- `coding-style.md` — Immutability (CRITICAL), file size limits (800 max), error handling
+Load steering files for domain-specific context:
+```bash
+cat rules/steering/devops.md     # infra, systemd, Docker
+cat rules/steering/python.md     # Python services/scripts
+cat rules/steering/research.md   # papers, academic work
+cat rules/steering/spec.md       # spec-driven feature design
+```
+
+Rules in `rules/common/`:
+- `coding-style.md` — Immutability (CRITICAL), file size ≤800 lines
 - `security.md` — Pre-commit checklist; STOP on CRITICAL findings
-- `testing.md` — TDD: write failing test FIRST, 80%+ coverage required
-- `agents.md` — When to use each agent proactively
+- `testing.md` — TDD: write failing test FIRST, 80%+ coverage
 - `git-workflow.md` — Commit format: `<type>: <description>`
+- `agents.md` — When to use each agent proactively
 
 ## Coding Best Practices
 
-From studying leading AI coding agents (Devin, Augment, Cursor, ECC):
-
-1. **Before editing similar code**: run `git log --oneline -10 -- <path>` and `git blame <file>`
-2. **Before submitting**: run lint and tests; check for `console.log`/debug output
+1. **Before editing**: `git log --oneline -10 -- <path>` to check history
+2. **Before submitting**: run lint and tests; no `console.log`/debug output
 3. **Never modify tests** to pass — fix the code under test
 4. **Fix root cause**, not symptoms
-5. **Batch task transitions**: close prev + open next atomically
-6. **Immutability**: always create new objects, never mutate in-place
-7. **File size**: 200-400 lines typical, 800 max — extract if larger
+5. **Immutability**: always create new objects, never mutate in-place
+6. **File size**: 200-400 lines typical, 800 max
 
 ## Proactive Agent Usage
 
 Use these WITHOUT waiting for user to ask:
-- Complex feature request → run `planner` agent first
+- Complex feature → run `planner` agent first
 - Code written/modified → run `code-reviewer` agent
 - New feature or bug fix → use `/tdd` workflow
 - Architectural decision → run `architect` agent
@@ -115,28 +101,29 @@ Use these WITHOUT waiting for user to ask:
 
 ## Slash Commands
 
-- `/plan` — Plan before implementing (WAITS for your confirmation)
+- `/plan` — Plan before implementing (waits for confirmation)
 - `/review` — Confidence-based code review
 - `/tdd` — Test-driven development workflow
 - `/secure` — Security scan
 - `/build-fix` — Fix build errors
 
-## Steering Files (Context Injection)
-
-Load relevant steering files at session start for domain-specific context:
-- `cat hub/steering/devops.md` — infra, systemd, Docker
-- `cat hub/steering/python.md` — Python services/scripts
-- `cat hub/steering/research.md` — papers, academic work
-- `cat hub/steering/spec.md` — spec-driven feature design
-- `cat hub/steering/multi-ai.md` — multi-AI coordination
-
 ## Spec-Driven Development
 
 For complex features (3+ files, ambiguous requirements, multi-session work):
-1. Use `spec-agent` or follow `hub/runbooks/spec-workflow.md`
-2. Specs live in `.specs/<feature-name>/` (requirements → design → tasks)
+1. Specs live in `.specs/<feature-name>/` (requirements → design → tasks)
+2. See `docs/runbooks/spec-workflow.md` for the full workflow
 3. Never code before specs are approved
+
+## Session Close Protocol
+
+Before saying "done", run:
+```bash
+git status && git add <files>
+bd sync
+git commit -m "<type>: <description>"
+git push
+```
 
 ## Skills (Agents)
 
-Use the shared skills catalog in `AGENTS.md` to pick the right specialist for a task.
+See `AGENTS.md` for the full catalog.

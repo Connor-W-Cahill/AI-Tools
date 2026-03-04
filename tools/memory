@@ -1,0 +1,40 @@
+#!/bin/bash
+# tools/memory — Memory management: add, search, show
+# Usage:
+#   tools/memory add "key: value"     — append fact to MEMORY.md
+#   tools/memory search "query"       — search via RAG
+#   tools/memory show                 — cat MEMORY.md
+
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$TOOLS_DIR")"
+MEMORY_FILE="$PROJECT_DIR/memory/MEMORY.md"
+
+cmd="${1:-show}"
+shift || true
+
+case "$cmd" in
+  add)
+    fact="$*"
+    if [ -z "$fact" ]; then
+      echo "Usage: tools/memory add \"key: value\""
+      exit 1
+    fi
+    echo "- $fact" >> "$MEMORY_FILE"
+    echo "[memory] Added: $fact"
+    ;;
+  search)
+    query="$*"
+    if [ -z "$query" ]; then
+      echo "Usage: tools/memory search \"query\""
+      exit 1
+    fi
+    python3 "$PROJECT_DIR/rag/knowledge_base.py" search "$query" 2>/dev/null || grep -i "$query" "$MEMORY_FILE"
+    ;;
+  show)
+    cat "$MEMORY_FILE"
+    ;;
+  *)
+    echo "Usage: tools/memory [add|search|show]"
+    exit 1
+    ;;
+esac

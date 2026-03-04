@@ -6,14 +6,14 @@ This file lists the shared skills available to all AI tools in this repo. Use th
 
 ## Steering Files
 Load these at session start to inject relevant context:
-- `hub/steering/devops.md` — systemd, Docker, Bash, infra work
-- `hub/steering/python.md` — Python scripts and services
-- `hub/steering/research.md` — papers, analysis, academic work
-- `hub/steering/spec.md` — spec-driven feature design
-- `hub/steering/multi-ai.md` — multi-AI coordination
+- `rules/steering/devops.md` — systemd, Docker, Bash, infra work
+- `rules/steering/python.md` — Python scripts and services
+- `rules/steering/research.md` — papers, analysis, academic work
+- `rules/steering/spec.md` — spec-driven feature design
+- `rules/steering/multi-ai.md` — multi-AI coordination
 
 ## Spec-Driven Development
-For complex features: use `spec-agent` or follow `hub/runbooks/spec-workflow.md`
+For complex features: use `spec-agent` or follow `docs/runbooks/spec-workflow.md`
 - Creates `.specs/<feature>/requirements.md` → `design.md` → `tasks.md`
 - Phases gate on explicit approval before advancing
 
@@ -25,18 +25,12 @@ For complex features: use `spec-agent` or follow `hub/runbooks/spec-workflow.md`
 - `/build-fix` — Fix build/type errors incrementally
 
 ## Quality Rules
-See `hub/rules/common/` for:
+See `rules/common/` for:
 - `coding-style.md` — Immutability, file size limits, error handling
 - `security.md` — Pre-commit security checklist
 - `testing.md` — TDD workflow, 80%+ coverage requirement
 - `agents.md` — When and how to use agents
 - `git-workflow.md` — Commit format, PR process
-
-## Context Modes
-Load at session start to set behavior:
-- `cat hub/contexts/dev.md` — Active development mode
-- `cat hub/contexts/review.md` — PR review mode
-- `cat hub/contexts/research.md` — Research/exploration mode
 
 ## Specialized Claude Code Agents (in `~/.claude/agents/`)
 These are invoked automatically by Claude Code's subagent system:
