@@ -83,6 +83,32 @@ python3 ~/AI-Tools/rag/knowledge_base.py reindex
 - `docs/` — Project documentation
 - `.beads/` — Task tracking (bd)
 
+## Coding Best Practices
+
+From studying leading AI coding agents (Devin, Augment, Cursor):
+
+1. **Before editing similar code**: run `git log --oneline -10 -- <path>` and `git blame <file>` to understand prior decisions
+2. **Before submitting changes**: run lint and tests if available
+3. **Never modify tests** to make them pass — fix the code under test
+4. **Fix root cause**, not symptoms (no workarounds for broken infra)
+5. **Batch task transitions**: when closing one task and opening next, do it atomically
+
+## Steering Files (Context Injection)
+
+Load relevant steering files at session start for domain-specific context:
+- `cat hub/steering/devops.md` — infra, systemd, Docker
+- `cat hub/steering/python.md` — Python services/scripts
+- `cat hub/steering/research.md` — papers, academic work
+- `cat hub/steering/spec.md` — spec-driven feature design
+- `cat hub/steering/multi-ai.md` — multi-AI coordination
+
+## Spec-Driven Development
+
+For complex features (3+ files, ambiguous requirements, multi-session work):
+1. Use `spec-agent` or follow `hub/runbooks/spec-workflow.md`
+2. Specs live in `.specs/<feature-name>/` (requirements → design → tasks)
+3. Never code before specs are approved
+
 ## Skills (Agents)
 
 Use the shared skills catalog in `AGENTS.md` to pick the right specialist for a task.

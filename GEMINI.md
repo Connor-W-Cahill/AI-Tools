@@ -68,6 +68,24 @@ python3 ~/AI-Tools/rag/knowledge_base.py search "<query>"
 - `langfuse/` — Langfuse Docker Compose
 - `n8n/` — n8n workflow data
 
+## Coding Best Practices
+- Check `git log --oneline -10 -- <path>` before editing similar code
+- Run lint/tests before marking work done
+- Fix root cause, not symptoms; never modify tests to make them pass
+- Batch task transitions: close prev + open next atomically
+
+## Steering (Context Injection)
+Load at session start for domain-specific context:
+- `cat hub/steering/devops.md` — infra work
+- `cat hub/steering/python.md` — Python
+- `cat hub/steering/research.md` — papers/writing
+- `cat hub/steering/spec.md` — spec-driven design
+
+## Spec-Driven Development
+For complex features: follow `hub/runbooks/spec-workflow.md`
+- Specs: `.specs/<feature>/requirements.md` → `design.md` → `tasks.md`
+- Never code before specs approved
+
 ## Skills (Agents)
 
 Use the shared skills catalog in `AGENTS.md` to pick the right specialist for a task.
