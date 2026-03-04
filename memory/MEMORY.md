@@ -43,11 +43,22 @@
 
 ## Key Patterns
 - **Task tracking**: `bd` (beads) only — never TodoWrite/TaskCreate/markdown
-- **Session close**: `bd sync` before done
+- **Session close**: `bd sync` before done (or `tools/sync` for full save)
 - **Service debugging**: `journalctl --user -u <service> --no-pager -n N`
 - **Before editing**: `git log --oneline -10 -- <path>` to check history
-- **Spec workflow**: complex features → `.specs/<feature>/` (runbooks/spec-workflow.md)
+- **Spec workflow**: complex features → `.specs/<feature>/` (docs/runbooks/spec-workflow.md)
 - **Steering files**: `rules/steering/` — load devops.md, python.md as needed
+- **Memory**: `tools/memory add "..."` to add facts, `tools/sync` to commit session log
+- **Auto-memory**: memory/MEMORY.md is symlinked to ~/.claude/.../memory/MEMORY.md
+
+## Project Structure (rebuilt 2026-03-03)
+- `tools/` — ai launcher, memory, sync scripts
+- `hooks/` — Claude Code Stop hook → session-end.sh
+- `agents/` — planner, code-reviewer, architect, tdd-guide, security-reviewer
+- `skills/` — tdd-workflow, python-patterns, security-review, coding-standards
+- `rules/common/` — coding-style, security, testing, git-workflow, agents
+- `rules/steering/` — devops, python, research, spec, multi-ai
+- `memory/` — MEMORY.md + sessions/
 
 ## Preferences
 - Writing: concise, pragmatic, actionable
