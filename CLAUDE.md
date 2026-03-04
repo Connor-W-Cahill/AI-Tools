@@ -83,15 +83,43 @@ python3 ~/AI-Tools/rag/knowledge_base.py reindex
 - `docs/` — Project documentation
 - `.beads/` — Task tracking (bd)
 
+## Quality Rules
+
+Rules in `hub/rules/common/` — read before starting work in that domain:
+- `coding-style.md` — Immutability (CRITICAL), file size limits (800 max), error handling
+- `security.md` — Pre-commit checklist; STOP on CRITICAL findings
+- `testing.md` — TDD: write failing test FIRST, 80%+ coverage required
+- `agents.md` — When to use each agent proactively
+- `git-workflow.md` — Commit format: `<type>: <description>`
+
 ## Coding Best Practices
 
-From studying leading AI coding agents (Devin, Augment, Cursor):
+From studying leading AI coding agents (Devin, Augment, Cursor, ECC):
 
-1. **Before editing similar code**: run `git log --oneline -10 -- <path>` and `git blame <file>` to understand prior decisions
-2. **Before submitting changes**: run lint and tests if available
-3. **Never modify tests** to make them pass — fix the code under test
-4. **Fix root cause**, not symptoms (no workarounds for broken infra)
-5. **Batch task transitions**: when closing one task and opening next, do it atomically
+1. **Before editing similar code**: run `git log --oneline -10 -- <path>` and `git blame <file>`
+2. **Before submitting**: run lint and tests; check for `console.log`/debug output
+3. **Never modify tests** to pass — fix the code under test
+4. **Fix root cause**, not symptoms
+5. **Batch task transitions**: close prev + open next atomically
+6. **Immutability**: always create new objects, never mutate in-place
+7. **File size**: 200-400 lines typical, 800 max — extract if larger
+
+## Proactive Agent Usage
+
+Use these WITHOUT waiting for user to ask:
+- Complex feature request → run `planner` agent first
+- Code written/modified → run `code-reviewer` agent
+- New feature or bug fix → use `/tdd` workflow
+- Architectural decision → run `architect` agent
+- Auth/API/user-input code → run `security-reviewer`
+
+## Slash Commands
+
+- `/plan` — Plan before implementing (WAITS for your confirmation)
+- `/review` — Confidence-based code review
+- `/tdd` — Test-driven development workflow
+- `/secure` — Security scan
+- `/build-fix` — Fix build errors
 
 ## Steering Files (Context Injection)
 

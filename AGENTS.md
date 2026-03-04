@@ -17,6 +17,35 @@ For complex features: use `spec-agent` or follow `hub/runbooks/spec-workflow.md`
 - Creates `.specs/<feature>/requirements.md` → `design.md` → `tasks.md`
 - Phases gate on explicit approval before advancing
 
+## Slash Commands (Claude Code)
+- `/plan` — Plan before implementing; blocks code until you confirm
+- `/review` — Comprehensive confidence-based code review
+- `/tdd` — Test-driven development workflow (RED→GREEN→REFACTOR)
+- `/secure` — Security scan (OWASP, secrets, injection)
+- `/build-fix` — Fix build/type errors incrementally
+
+## Quality Rules
+See `hub/rules/common/` for:
+- `coding-style.md` — Immutability, file size limits, error handling
+- `security.md` — Pre-commit security checklist
+- `testing.md` — TDD workflow, 80%+ coverage requirement
+- `agents.md` — When and how to use agents
+- `git-workflow.md` — Commit format, PR process
+
+## Context Modes
+Load at session start to set behavior:
+- `cat hub/contexts/dev.md` — Active development mode
+- `cat hub/contexts/review.md` — PR review mode
+- `cat hub/contexts/research.md` — Research/exploration mode
+
+## Specialized Claude Code Agents (in `~/.claude/agents/`)
+These are invoked automatically by Claude Code's subagent system:
+- `planner` — Implementation planning with phase breakdown (use proactively for complex features)
+- `architect` — System design and ADRs
+- `tdd-guide` — TDD enforcement (write tests FIRST)
+- `code-reviewer` — Confidence-based code review (>80% threshold)
+- `security-reviewer` — OWASP Top 10, secrets, injection, auth
+
 Skills
 - `ai-cli-sync` — Keep Codex, OpenCode, Gemini, and docs in sync. Source: `agents/ai-cli-sync.md`.
 - `ai-error-resolver` — Document and resolve AI-generated errors, build a reusable error log. Source: `agents/ai-error-resolver.md`.
