@@ -1,0 +1,11 @@
+[Unit]
+Description=WVU Free Food Scraper — daily at 1 PM
+Requires=wvu-food.service
+
+[Timer]
+OnCalendar=*-*-* 13:00:00
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

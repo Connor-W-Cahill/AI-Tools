@@ -1,0 +1,6 @@
+.env
+session/cookies.json
+briefings/
+logs/
+__pycache__/
+*.pyc

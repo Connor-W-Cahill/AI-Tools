@@ -1,0 +1,15 @@
+[Unit]
+Description=WVU Free Food Scraper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/connor/AI-Tools/wvu-free-food
+ExecStart=/usr/bin/python3 /home/connor/AI-Tools/wvu-free-food/main.py
+StandardOutput=append:/home/connor/AI-Tools/wvu-free-food/logs/wvu-food.log
+StandardError=append:/home/connor/AI-Tools/wvu-free-food/logs/wvu-food.log
+EnvironmentFile=/home/connor/AI-Tools/wvu-free-food/.env
+
+[Install]
+WantedBy=default.target
