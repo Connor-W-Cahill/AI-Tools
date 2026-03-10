@@ -48,15 +48,10 @@ def generate_briefing(engage_events: List, cal_events: List, briefings_dir: str 
     cal_today = [e for e in cal_events if is_today(e)]
     cal_week = [e for e in cal_events if not is_today(e)]
 
-    total_today = len(engage_today) + len(cal_today)
-    total_week = len(engage_week) + len(cal_week)
-
-    # Build raw data for the prompt
+    # Build raw data for the prompt — today only
     raw_data = []
     raw_data.append(_build_event_block(engage_today, "WVU Engage — Today"))
-    raw_data.append(_build_event_block(engage_week, "WVU Engage — This Week"))
     raw_data.append(_build_event_block(cal_today, "WVU Calendar — Today"))
-    raw_data.append(_build_event_block(cal_week, "WVU Calendar — This Week"))
     raw_data_str = "\n".join(r for r in raw_data if r)
 
     if not raw_data_str.strip():
@@ -68,11 +63,11 @@ def generate_briefing(engage_events: List, cal_events: List, briefings_dir: str 
 
 Today is {today_str}.
 
-Below is scraped event data from WVU Engage and the WVU Calendar. Generate a detailed, well-organized daily briefing in markdown.
+Below is scraped event data from WVU Engage and the WVU Calendar. Generate a concise daily briefing covering TODAY'S events only — ignore anything not happening today.
 
 Structure:
-1. **Bold one-line summary** at top (e.g. "X confirmed food events today, Y more this week")
-2. ## 🍕 Today section
+1. **Bold one-line summary** (e.g. "X free food events on campus today")
+2. ## 🍕 Today's Events
    For each event use this exact format:
    ### [Event Name]
    - **Time**: exact time (e.g. 5:00 PM)
@@ -80,26 +75,26 @@ Structure:
    - **Topic**: what the event is about (1 sentence)
    - **Hosted by**: org or department
    - **Food**: be specific — if description says "pizza" say pizza; if vague say "refreshments (unspecified)"
-   - **Confidence**: X% — explain in 5 words why (e.g. "explicitly says free pizza", "only mentions 'refreshments'", "food mentioned but unclear if free")
-   - **Why go**: 1-sentence pitch — what's the event + food combo
+   - **Confidence**: X% — explain in 5 words why (e.g. "explicitly says free pizza", "only mentions refreshments", "food mentioned but unclear if free")
+   - **Why go**: 1-sentence pitch
    - **Link**: url
 
    Confidence scoring guide:
    - 90-100%: explicitly says free food/pizza/lunch/dinner with no ambiguity
    - 70-89%: says "refreshments provided" or "food will be served"
-   - 50-69%: mentions food in passing or it's implied by event type
+   - 50-69%: mentions food in passing or implied by event type
    - Below 50%: very unclear, food keyword matched but context is vague
 
-3. ## 📅 This Week section — same detail level, grouped by day, sorted chronologically
-4. ## 🏆 Top Picks — your 2-3 best bets for actually getting free food, ranked by confidence + food quality, one sentence reason each
+3. ## 🏆 Top Pick — your single best bet for free food today, one sentence why
 
+If there are no events today, say so clearly.
 Be specific about food. Never say just "food" — use what the description actually says.
 Do NOT wrap the output in code fences or markdown blocks. Output raw markdown only.
 
 Raw event data:
 {raw_data_str}
 
-Generate the full briefing now:"""
+Generate the briefing now:"""
 
     try:
         base_url = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")

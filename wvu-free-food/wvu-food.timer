@@ -1,9 +1,9 @@
 [Unit]
-Description=WVU Free Food Scraper — daily at 1 PM
+Description=WVU Free Food Scraper — daily at 9 AM
 Requires=wvu-food.service
 
 [Timer]
-OnCalendar=*-*-* 13:00:00
+OnCalendar=*-*-* 09:00:00
 AccuracySec=1min
 Persistent=true
 
