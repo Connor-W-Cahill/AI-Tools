@@ -64,22 +64,42 @@ def generate_briefing(engage_events: List, cal_events: List, briefings_dir: str 
         _save_briefing(briefing_text, briefings_dir, now)
         return briefing_text
 
-    prompt = f"""You are a helpful assistant for a WVU student looking for free food on campus.
+    prompt = f"""You are a helpful assistant for a WVU student hunting for free food on campus.
 
 Today is {today_str}.
 
-Below is raw scraped data about events mentioning free food at WVU. Generate a clean, scannable daily briefing in markdown. Use this structure:
+Below is scraped event data from WVU Engage and the WVU Calendar. Generate a detailed, well-organized daily briefing in markdown.
 
-1. A one-line summary up top (e.g. "X events with food today, Y more this week")
-2. ## Today section — list today's events clearly (name, time, location, org, what food)
-3. ## Upcoming This Week section — upcoming events
-4. Keep descriptions brief and actionable
-5. If an event's description doesn't actually confirm free food (just mentions food generally), flag it with "(unconfirmed)"
+Structure:
+1. **Bold one-line summary** at top (e.g. "X confirmed food events today, Y more this week")
+2. ## 🍕 Today section
+   For each event use this exact format:
+   ### [Event Name]
+   - **Time**: exact time (e.g. 5:00 PM)
+   - **Location**: building/room
+   - **Topic**: what the event is about (1 sentence)
+   - **Hosted by**: org or department
+   - **Food**: be specific — if description says "pizza" say pizza; if vague say "refreshments (unspecified)"
+   - **Confidence**: X% — explain in 5 words why (e.g. "explicitly says free pizza", "only mentions 'refreshments'", "food mentioned but unclear if free")
+   - **Why go**: 1-sentence pitch — what's the event + food combo
+   - **Link**: url
 
-Raw data:
+   Confidence scoring guide:
+   - 90-100%: explicitly says free food/pizza/lunch/dinner with no ambiguity
+   - 70-89%: says "refreshments provided" or "food will be served"
+   - 50-69%: mentions food in passing or it's implied by event type
+   - Below 50%: very unclear, food keyword matched but context is vague
+
+3. ## 📅 This Week section — same detail level, grouped by day, sorted chronologically
+4. ## 🏆 Top Picks — your 2-3 best bets for actually getting free food, ranked by confidence + food quality, one sentence reason each
+
+Be specific about food. Never say just "food" — use what the description actually says.
+Do NOT wrap the output in code fences or markdown blocks. Output raw markdown only.
+
+Raw event data:
 {raw_data_str}
 
-Generate the briefing now:"""
+Generate the full briefing now:"""
 
     try:
         base_url = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
@@ -88,8 +108,8 @@ Generate the briefing now:"""
         resp = requests.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 2000},
-            timeout=60,
+            json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 3000},
+            timeout=120,
         )
         resp.raise_for_status()
         briefing_text = resp.json()["choices"][0]["message"]["content"]

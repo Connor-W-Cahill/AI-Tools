@@ -23,6 +23,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from auth import WVUAuth
 from briefing import generate_briefing
+from discord_notify import post_briefing as discord_post
 from engage_scraper import fetch_events as fetch_engage_events
 from wvu_calendar_scraper import fetch_all as fetch_calendar_events
 
@@ -116,6 +117,21 @@ def main() -> None:
         print("\n" + "=" * 60)
         print(briefing)
         print("=" * 60 + "\n")
+
+    # ----------------------------------------------------------------
+    # Step 5: Send to Discord
+    # ----------------------------------------------------------------
+    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+    if webhook_url:
+        from datetime import datetime, timezone
+        date_str = datetime.now(timezone.utc).strftime("%A, %B %-d")
+        ok = discord_post(briefing, webhook_url, date_str)
+        if ok:
+            logger.info("Discord notification sent.")
+        else:
+            logger.warning("Discord notification failed.")
+    else:
+        logger.info("DISCORD_WEBHOOK_URL not set — skipping Discord.")
 
     logger.info("Done.")
 
