@@ -1,0 +1,491 @@
+#!/usr/bin/env python3
+"""
+tools/jira — Jira CLI for AI-Tools workflow
+OAuth 2.0 (3LO) with statlerits.atlassian.net
+
+Usage:
+  jira auth                    Run OAuth flow (required first time)
+  jira boards                  List accessible projects
+  jira issues [PROJECT]        List issues (all yours, or by project key)
+  jira view <key>              View a ticket (e.g. PROJ-123)
+  jira create [summary]        Create ticket (auto-routes to best project)
+  jira open <key>              Open ticket in browser
+  jira me                      Show your user info
+  jira route <summary>         Show which project a task would go to
+"""
+
+import sys
+import os
+import json
+import webbrowser
+import secrets
+import urllib.parse
+import urllib.request
+import urllib.error
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
+
+CONFIG_FILE = Path.home() / ".config" / "jira" / "config.json"
+TOKEN_FILE  = Path.home() / ".config" / "jira" / "tokens.json"
+
+AUTH_URL    = "https://auth.atlassian.com/authorize"
+TOKEN_URL   = "https://auth.atlassian.com/oauth/token"
+RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
+SCOPES      = "read:jira-work write:jira-work read:jira-user read:board-scope:jira-software offline_access"
+
+# ── ANSI colors ──────────────────────────────────────────────────────────────
+if sys.stdout.isatty():
+    R='\033[31m'; G='\033[32m'; Y='\033[33m'; B='\033[34m'
+    M='\033[35m'; C='\033[36m'; W='\033[1m';  N='\033[0m'
+else:
+    R=G=Y=B=M=C=W=N=''
+
+
+def load_config():
+    if not CONFIG_FILE.exists():
+        die(f"Config not found at {CONFIG_FILE}\nRun setup or check credentials.")
+    with open(CONFIG_FILE) as f:
+        return json.load(f)
+
+
+def load_tokens():
+    if not TOKEN_FILE.exists():
+        return None
+    with open(TOKEN_FILE) as f:
+        return json.load(f)
+
+
+def save_tokens(data):
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(TOKEN_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+    TOKEN_FILE.chmod(0o600)
+
+
+def die(msg):
+    print(f"{R}Error:{N} {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def http_post(url, data, headers=None):
+    body = json.dumps(data).encode()
+    req = urllib.request.Request(url, data=body,
+                                  headers={"Content-Type": "application/json", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        die(f"HTTP {e.code} on POST {url}: {e.read().decode()}")
+
+
+def http_get(url, token):
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}",
+                                               "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return None  # signal token refresh needed
+        die(f"HTTP {e.code} on GET {url}: {e.read().decode()}")
+
+
+def refresh_access_token(cfg, tokens):
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": cfg["client_id"],
+        "client_secret": cfg["client_secret"],
+        "refresh_token": tokens["refresh_token"],
+    }
+    result = http_post(TOKEN_URL, data)
+    tokens.update(result)
+    save_tokens(tokens)
+    return tokens
+
+
+def get_token(cfg):
+    """Get a valid access token, refreshing if needed."""
+    tokens = load_tokens()
+    if not tokens:
+        die("Not authenticated. Run:  jira auth")
+
+    # Try existing token
+    result = http_get(RESOURCES_URL, tokens["access_token"])
+    if result is not None:
+        return tokens["access_token"], tokens
+
+    # Refresh
+    print(f"{Y}Token expired, refreshing...{N}")
+    if "refresh_token" not in tokens:
+        die("No refresh token. Run:  jira auth")
+    tokens = refresh_access_token(cfg, tokens)
+    return tokens["access_token"], tokens
+
+
+def get_cloud_id(token, tokens):
+    """Get the Atlassian cloud ID (needed for API calls)."""
+    resources = http_get(RESOURCES_URL, token)
+    if not resources:
+        die("Could not fetch accessible resources.")
+    # Find statlerits
+    for r in resources:
+        if "statlerits" in r.get("url", ""):
+            return r["id"]
+    # Fallback to first
+    if resources:
+        return resources[0]["id"]
+    die("No Jira Cloud resources found for this account.")
+
+
+def jira_get(path, cfg, token, cloud_id):
+    url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3{path}"
+    return http_get(url, token)
+
+
+def jira_post(path, body, cfg, token, cloud_id):
+    url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3{path}"
+    return http_post(url, body, headers={"Authorization": f"Bearer {token}"})
+
+
+# ── Project routing ──────────────────────────────────────────────────────────
+
+# Each entry: (project_key, description, [keywords])
+PROJECT_ROUTES = [
+    ("CYBPROX",   "Proxmox cluster, VMs, nodes, storage, containers, LVM",
+     ["proxmox", "pve", "vm", "virtual machine", "cluster", "node", "lvm", "storage",
+      "container", "ct", "kvm", "qemu", "hypervisor", "rebuild cluster", "drive", "disk"]),
+
+    ("PXELAND",   "PXE boot server, network boot, DHCP, OS images, lab deployment",
+     ["pxe", "pxeland", "netboot", "network boot", "dhcp", "reservation", "static ip",
+      "boot menu", "iso", "ubuntu install", "centos install", "rack", "credential sheet"]),
+
+    ("CYBVPN",    "VPN, remote access, network config, boot parameters, lab IPs",
+     ["vpn", "wireguard", "openvpn", "tunnel", "remote access", "imgargs", "boot param",
+      "lab ip", "network config", "centos pxe", "22.04 graphical"]),
+
+    ("CYBPACK",   "Packer image building, VM templates, golden images",
+     ["packer", "template", "golden image", "image build", "snapshot", "base image", "sniff"]),
+
+    ("CYBCSSP",   "CSSP security platform, VPC, cloud instances, web UI features",
+     ["cssp", "vpc", "cloud", "instance", "secret", "copy paste", "security platform",
+      "multi instance", "magnum opus"]),
+
+    ("LOUD",      "Lab operations, AWX/Ansible, AER lab machines, physical lab tasks",
+     ["awx", "ansible", "operator", "lab", "aer", "aer-138", "auto-logout", "logout",
+      "monitor", "cleaning", "confluence", "user-data", "merge"]),
+
+    ("STATLERITS","Statler ITS helpdesk: printers, projectors, software, email, faculty requests",
+     ["printer", "projector", "software install", "license", "email request", "faculty",
+      "statler", "mrb", "erb", "ansys", "award", "employee", "helpdesk", "support ticket"]),
+
+    ("INVTY2025", "IT asset inventory, hardware tracking, equipment, rooms, serial numbers",
+     ["inventory", "asset", "hardware", "equipment", "serial", "room", "space",
+      "bulk operation", "api inventory", "tracking"]),
+
+    ("CYB",       "General cybereers tasks: SSH, RDP, troubleshooting, security research",
+     ["ssh", "rdp", "remote desktop", "troubleshoot", "cybereers", "ctf", "red team",
+      "blue team", "security research", "fix ", "down", "csee"]),
+]
+
+
+def route_project(summary: str) -> tuple:
+    """Return (project_key, reason) for the best matching project."""
+    text = summary.lower()
+    scores = []
+    for key, desc, keywords in PROJECT_ROUTES:
+        score = sum(1 for kw in keywords if kw in text)
+        scores.append((score, key, desc))
+    scores.sort(reverse=True)
+    best_score, best_key, best_desc = scores[0]
+    if best_score == 0:
+        # Default to CYB (general bucket)
+        return "CYB", "no specific keywords matched — defaulting to general cybereers"
+    return best_key, best_desc
+
+
+# ── OAuth flow ────────────────────────────────────────────────────────────────
+
+_oauth_code = None
+
+class CallbackHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        global _oauth_code
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        if "code" in params:
+            _oauth_code = params["code"][0]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"<h2>Auth successful! You can close this tab.</h2>")
+        else:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b"<h2>Auth failed - no code received.</h2>")
+
+    def log_message(self, *_):
+        pass  # suppress request logs
+
+
+def cmd_auth():
+    cfg = load_config()
+    state = secrets.token_urlsafe(16)
+
+    params = {
+        "audience": "api.atlassian.com",
+        "client_id": cfg["client_id"],
+        "scope": SCOPES,
+        "redirect_uri": cfg["redirect_uri"],
+        "state": state,
+        "response_type": "code",
+        "prompt": "consent",
+    }
+    url = AUTH_URL + "?" + urllib.parse.urlencode(params)
+
+    print(f"{W}Opening browser for Atlassian OAuth...{N}")
+    print(f"{B}{url}{N}\n")
+    webbrowser.open(url)
+
+    print(f"{Y}Waiting for callback on http://localhost:8765 ...{N}")
+    server = HTTPServer(("localhost", 8765), CallbackHandler)
+    server.handle_request()  # one shot
+
+    if not _oauth_code:
+        die("No authorization code received.")
+
+    # Exchange code for tokens
+    token_data = {
+        "grant_type": "authorization_code",
+        "client_id": cfg["client_id"],
+        "client_secret": cfg["client_secret"],
+        "code": _oauth_code,
+        "redirect_uri": cfg["redirect_uri"],
+    }
+    tokens = http_post(TOKEN_URL, token_data)
+    save_tokens(tokens)
+    print(f"{G}Authenticated successfully! Tokens saved.{N}")
+
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+def cmd_me():
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+    me = jira_get("/myself", cfg, token, cloud_id)
+    print(f"{W}User:{N}  {me['displayName']} ({me['emailAddress']})")
+    print(f"{W}Key:{N}   {me['accountId']}")
+
+
+def cmd_boards():
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+
+    # Try Jira Software board endpoint first
+    data = jira_get("/board?maxResults=50", cfg, token, cloud_id)
+    if data and "values" in data and data["values"]:
+        print(f"\n{W}{'ID':<6} {'Name':<40} {'Type':<10} Project{N}")
+        print("-" * 75)
+        for b in data["values"]:
+            bid   = str(b.get("id", ""))
+            name  = b.get("name", "")[:38]
+            btype = b.get("type", "")
+            proj  = b.get("location", {}).get("projectKey", "")
+            print(f"{C}{bid:<6}{N} {name:<40} {Y}{btype:<10}{N} {proj}")
+        print()
+        return
+
+    # Fall back to projects
+    print(f"{Y}No boards found — listing accessible projects:{N}")
+    projects = jira_get("/project?maxResults=50", cfg, token, cloud_id)
+    if not projects:
+        print("No projects found.")
+        return
+    print(f"\n{W}{'Key':<12} Name{N}")
+    print("-" * 50)
+    for p in projects:
+        print(f"{C}{p['key']:<12}{N} {p['name']}")
+    print()
+
+
+def cmd_issues(project_key=None):
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+
+    if project_key:
+        jql = urllib.parse.quote(f"project = {project_key.upper()} ORDER BY updated DESC")
+    else:
+        jql = urllib.parse.quote("assignee = currentUser() ORDER BY updated DESC")
+
+    data = jira_get(f"/search/jql?jql={jql}&maxResults=30&fields=summary,status,assignee,priority,project",
+                    cfg, token, cloud_id)
+    issues = data.get("issues", []) if data else []
+
+    if not issues:
+        print("No issues found.")
+        return
+
+    print(f"\n{W}{'Key':<14} {'Priority':<10} {'Status':<20} Summary{N}")
+    print("─" * 80)
+    for i in issues:
+        key      = i.get("key", "")
+        f        = i.get("fields", {})
+        summary  = (f.get("summary") or "")[:42]
+        status   = (f.get("status") or {}).get("name", "")[:18]
+        priority = (f.get("priority") or {}).get("name", "")[:8]
+        pcolor   = R if priority == "Highest" else Y if priority in ("High","Medium") else G
+        print(f"{C}{key:<14}{N} {pcolor}{priority:<10}{N} {status:<20} {summary}")
+    print()
+
+
+def cmd_view(key):
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+
+    issue = jira_get(f"/issue/{key}?fields=summary,description,status,assignee,priority,comment",
+                     cfg, token, cloud_id)
+    if not issue:
+        die(f"Issue {key} not found.")
+
+    f = issue["fields"]
+    print(f"\n{W}{key}{N}: {f.get('summary','')}")
+    print(f"{W}Status:{N}   {(f.get('status') or {}).get('name','')}")
+    print(f"{W}Priority:{N} {(f.get('priority') or {}).get('name','')}")
+    assignee = (f.get("assignee") or {}).get("displayName", "Unassigned")
+    print(f"{W}Assignee:{N} {assignee}")
+
+    # Description (ADF text extraction)
+    desc = f.get("description")
+    if desc and isinstance(desc, dict):
+        texts = []
+        def extract(node):
+            if isinstance(node, dict):
+                if node.get("type") == "text":
+                    texts.append(node.get("text",""))
+                for child in node.get("content", []):
+                    extract(child)
+        extract(desc)
+        print(f"\n{W}Description:{N}")
+        print(" ".join(texts)[:500])
+
+    # Recent comments
+    comments = (f.get("comment") or {}).get("comments", [])
+    if comments:
+        print(f"\n{W}Comments ({len(comments)}):{N}")
+        for c in comments[-3:]:
+            author = (c.get("author") or {}).get("displayName","?")
+            texts = []
+            def extract_c(node):
+                if isinstance(node, dict):
+                    if node.get("type") == "text":
+                        texts.append(node.get("text",""))
+                    for child in node.get("content",[]):
+                        extract_c(child)
+            extract_c(c.get("body",{}))
+            print(f"  {Y}{author}:{N} {' '.join(texts)[:120]}")
+    print()
+
+
+def cmd_open(key):
+    cfg = load_config()
+    url = f"{cfg['jira_url']}/browse/{key}"
+    print(f"Opening {url}")
+    webbrowser.open(url)
+
+
+def cmd_create(summary_arg=None):
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+
+    summary = summary_arg or input("Summary: ").strip()
+    if not summary:
+        die("Summary required.")
+
+    # Auto-route
+    proj_key, reason = route_project(summary)
+    print(f"\n{W}Auto-routed to:{N} {C}{proj_key}{N}  {D}({reason}){N}")
+    override = input(f"Project key [Enter to accept {proj_key}]: ").strip().upper()
+    if override:
+        proj_key = override
+
+    desc     = input("Description (optional): ").strip()
+    priority = input("Priority [Highest/High/Medium/Low/Lowest] (default Medium): ").strip() or "Medium"
+
+    body = {
+        "fields": {
+            "project":   {"key": proj_key},
+            "summary":   summary,
+            "issuetype": {"name": "Task"},
+            "priority":  {"name": priority},
+        }
+    }
+    if desc:
+        body["fields"]["description"] = {
+            "type": "doc", "version": 1,
+            "content": [{"type": "paragraph", "content": [{"type": "text", "text": desc}]}]
+        }
+
+    result = jira_post("/issue", body, cfg, token, cloud_id)
+    key = result.get("key","?")
+    url = f"{cfg['jira_url']}/browse/{key}"
+    print(f"\n{G}Created:{N} {W}{key}{N}  {B}{url}{N}")
+
+    # Sync to beads
+    bd_title = f"[{key}] {summary}"
+    bd_notes = f"Jira: {url}"
+    ret = os.system(f'bd create --title={json.dumps(bd_title)} --type=task --priority=2 --notes={json.dumps(bd_notes)} 2>/dev/null')
+    if ret == 0:
+        print(f"{G}Synced to beads.{N}\n")
+    else:
+        print(f"{Y}Note: beads sync failed (bd not in PATH?){N}\n")
+
+
+def cmd_route(summary):
+    """Show which project a task description would route to."""
+    proj_key, reason = route_project(summary)
+    print(f"\n{W}Summary:{N}  {summary}")
+    print(f"{W}Project:{N}  {C}{proj_key}{N}")
+    print(f"{W}Reason:{N}   {reason}\n")
+
+
+def usage():
+    print(__doc__)
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+COMMANDS = {
+    "auth":   (cmd_auth,   0),
+    "me":     (cmd_me,     0),
+    "boards": (cmd_boards, 0),
+    "issues": (cmd_issues, -1),  # optional arg
+    "view":   (cmd_view,   1),
+    "open":   (cmd_open,   1),
+    "create": (cmd_create, -1),  # optional summary arg
+    "route":  (cmd_route,  1),
+}
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help", "help"):
+        usage()
+        sys.exit(0)
+
+    cmd = args[0]
+    if cmd not in COMMANDS:
+        die(f"Unknown command: {cmd}\nRun 'jira help' for usage.")
+
+    fn, nargs = COMMANDS[cmd]
+    rest = args[1:]
+
+    if nargs == 0:
+        fn()
+    elif nargs == -1:
+        fn(*rest) if rest else fn()
+    else:
+        if len(rest) < nargs:
+            die(f"'{cmd}' requires {nargs} argument(s).")
+        fn(*rest[:nargs])

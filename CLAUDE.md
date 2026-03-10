@@ -20,6 +20,37 @@ ai ad       # Aider
 ai ?        # Help
 ```
 
+## Jira Integration (Required)
+
+When the user mentions a Jira task, ticket, board, or project — **always** use the Jira CLI:
+
+```bash
+python3 tools/jira route "description"        # check which project it routes to
+python3 tools/jira create "task description"  # create ticket (auto-routes + syncs beads)
+python3 tools/jira issues [PROJECT]           # list issues
+python3 tools/jira view PROJ-123              # view a ticket
+python3 tools/jira open PROJ-123              # open in browser
+```
+
+**Projects** (auto-routing by keyword):
+| Key | Purpose |
+|-----|---------|
+| CYBPROX | Proxmox cluster, VMs, nodes, LVM, storage |
+| PXELAND | PXE boot, DHCP, OS images, network boot |
+| CYBVPN | VPN, remote access, network config |
+| CYBPACK | Packer image building, VM templates |
+| CYBCSSP | CSSP security platform, VPC, cloud instances |
+| LOUD | Lab ops, AWX/Ansible, AER lab machines |
+| STATLERITS | Statler ITS helpdesk (printers, projectors, software) |
+| INVTY2025 | IT asset inventory, hardware tracking |
+| CYB | General cybereers (SSH, RDP, troubleshooting, CTF) |
+
+**Rules:**
+- Creating a Jira ticket ALWAYS also creates a beads issue (auto-synced)
+- Use `jira route "..."` to verify routing before creating if unsure
+- Config: `~/.config/jira/config.json` | Tokens: `~/.config/jira/tokens.json`
+- Re-auth if token expires: `python3 tools/jira auth`
+
 ## Task Tracking (Required)
 
 Use beads for ALL task tracking:
