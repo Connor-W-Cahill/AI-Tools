@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+"""Claude agentic CLI — adaptive thinking + tool use.
+
+Usage:
+    tools/agent "task description"
+    echo "task" | tools/agent
+    tools/agent --model sonnet "task"
+    tools/agent --effort max "hard reasoning task"
+
+Pipeline: Anthropic SDK (claude-opus-4-6) with adaptive thinking.
+Tools available: run_shell, read_file, write_file, list_directory.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# ── Resolve API key ───────────────────────────────────────────────────────
+
+_LITELLM_ENV = Path(__file__).parent.parent / "litellm" / "env"
+
+
+def _get_api_key():
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key:
+        return key
+    try:
+        for line in _LITELLM_ENV.read_text().splitlines():
+            if line.startswith("ANTHROPIC_API_KEY="):
+                return line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return ""
+
+
+# ── Tools ─────────────────────────────────────────────────────────────────
+
+TOOLS = [
+    {
+        "name": "run_shell",
+        "description": (
+            "Run a shell command in the working directory. "
+            "Use for: git, bd (beads), file ops, running tests, checking logs, "
+            "installing packages, system info. Timeout: 30s."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Shell command to execute."},
+                "cwd": {"type": "string", "description": "Working directory (optional)."},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read the contents of a file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to read."},
+                "start_line": {"type": "integer", "description": "First line (1-indexed, optional)."},
+                "end_line": {"type": "integer", "description": "Last line (inclusive, optional)."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": "Write or overwrite a file with the given content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to write."},
+                "content": {"type": "string", "description": "Content to write."},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "list_directory",
+        "description": "List files in a directory.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Directory path (default: cwd)."},
+                "pattern": {"type": "string", "description": "Glob pattern (e.g. '*.py')."},
+            },
+            "required": [],
+        },
+    },
+]
+
+
+def _run_shell(command, cwd=None):
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=cwd or os.getcwd(),
+        )
+        out = result.stdout.strip()
+        err = result.stderr.strip()
+        if out and err:
+            return "{}\n{}".format(out, err)
+        return out or err or "(no output)"
+    except subprocess.TimeoutExpired:
+        return "Command timed out after 30 seconds."
+    except Exception as e:
+        return "Error: {}".format(e)
+
+
+def _read_file(path, start_line=None, end_line=None):
+    try:
+        p = Path(path).expanduser()
+        lines = p.read_text(errors="replace").splitlines()
+        if start_line or end_line:
+            s = (start_line or 1) - 1
+            e = end_line or len(lines)
+            lines = lines[s:e]
+        return "\n".join(lines)
+    except Exception as e:
+        return "Error reading {}: {}".format(path, e)
+
+
+def _write_file(path, content):
+    try:
+        p = Path(path).expanduser()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return "Written {} bytes to {}".format(len(content), path)
+    except Exception as e:
+        return "Error writing {}: {}".format(path, e)
+
+
+def _list_directory(path=".", pattern=None):
+    try:
+        p = Path(path).expanduser()
+        if pattern:
+            entries = sorted(p.glob(pattern))
+        else:
+            entries = sorted(p.iterdir())
+        lines = []
+        for e in entries[:200]:
+            suffix = "/" if e.is_dir() else ""
+            lines.append("{}{}".format(e.name, suffix))
+        return "\n".join(lines) or "(empty)"
+    except Exception as e:
+        return "Error: {}".format(e)
+
+
+def _execute_tool(name, args):
+    if name == "run_shell":
+        return _run_shell(args.get("command", ""), args.get("cwd"))
+    elif name == "read_file":
+        return _read_file(
+            args.get("path", ""),
+            args.get("start_line"),
+            args.get("end_line"),
+        )
+    elif name == "write_file":
+        return _write_file(args.get("path", ""), args.get("content", ""))
+    elif name == "list_directory":
+        return _list_directory(args.get("path", "."), args.get("pattern"))
+    return "Unknown tool: {}".format(name)
+
+
+# ── Agentic loop ──────────────────────────────────────────────────────────
+
+SYSTEM = """You are an expert developer assistant with full access to the user's
+AI-Tools workspace at /home/connor/AI-Tools.
+
+You have tools to run shell commands, read/write files, and list directories.
+Work methodically: understand the task, explore as needed, implement, verify.
+
+Key commands:
+- bd ready / bd list / bd create / bd close  (beads task tracking)
+- git status / git log / git add / git commit
+- python3 -m pytest (tests)
+- journalctl --user -u <service> -n 20 (service logs)
+
+Be concise in your responses. Show your work but don't over-explain."""
+
+
+def run_agent(prompt, model="claude-opus-4-6", effort="high", max_turns=10):
+    api_key = _get_api_key()
+    if not api_key:
+        print("ERROR: ANTHROPIC_API_KEY not found. Set it or add to litellm/env.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        import anthropic
+    except ImportError:
+        print("ERROR: anthropic SDK not installed. Run: pip install anthropic", file=sys.stderr)
+        sys.exit(1)
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    messages = [{"role": "user", "content": prompt}]
+    thinking_param = {"type": "adaptive"}
+    output_config = {"effort": effort}
+
+    print("\033[2m[Agent] model={} effort={} thinking=adaptive\033[0m".format(model, effort))
+    print("\033[2m[Agent] Task: {}\033[0m\n".format(prompt[:80]))
+
+    for turn in range(max_turns):
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=8192,
+                system=SYSTEM,
+                messages=messages,
+                tools=TOOLS,
+                tool_choice={"type": "auto"},
+                thinking=thinking_param,
+                output_config=output_config,
+            )
+        except anthropic.RateLimitError:
+            print("\n[Agent] Rate limited. Retry later.", file=sys.stderr)
+            sys.exit(1)
+        except anthropic.AuthenticationError:
+            print("\n[Agent] Invalid API key.", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print("\n[Agent] API error: {}".format(e), file=sys.stderr)
+            sys.exit(1)
+
+        tool_uses = []
+        asst_content = []
+
+        for block in response.content:
+            if block.type == "thinking":
+                # Print thinking summary (truncated)
+                preview = block.thinking[:200].replace("\n", " ")
+                print("\033[2m[thinking] {}...\033[0m".format(preview))
+                asst_content.append({
+                    "type": "thinking",
+                    "thinking": block.thinking,
+                    "signature": block.signature,
+                })
+            elif block.type == "text":
+                print(block.text)
+                asst_content.append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                tool_uses.append(block)
+                asst_content.append({
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                })
+
+        messages.append({"role": "assistant", "content": asst_content})
+
+        if response.stop_reason == "end_turn" or not tool_uses:
+            break
+
+        # Execute tools
+        tool_results = []
+        for tu in tool_uses:
+            cmd_preview = json.dumps(tu.input)[:80]
+            print("\033[33m[tool:{}]\033[0m {}".format(tu.name, cmd_preview))
+            result = _execute_tool(tu.name, tu.input)
+            result_preview = result[:200].replace("\n", " ")
+            print("\033[2m  → {}\033[0m".format(result_preview))
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tu.id,
+                "content": result[:6000],
+            })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    else:
+        print("\n[Agent] Reached max turns ({}).".format(max_turns))
+
+
+# ── Entry point ───────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Claude agentic CLI with adaptive thinking",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("task", nargs="?", help="Task description")
+    parser.add_argument(
+        "--model", default="claude-opus-4-6",
+        choices=["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+        help="Model to use (default: claude-opus-4-6)",
+    )
+    parser.add_argument(
+        "--effort", default="high",
+        choices=["low", "medium", "high", "max"],
+        help="Thinking effort level (default: high)",
+    )
+    parser.add_argument(
+        "--max-turns", type=int, default=10,
+        help="Maximum agent turns (default: 10)",
+    )
+    args = parser.parse_args()
+
+    if args.task:
+        prompt = args.task
+    elif not sys.stdin.isatty():
+        prompt = sys.stdin.read().strip()
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+    run_agent(prompt, model=args.model, effort=args.effort, max_turns=args.max_turns)
+
+
+if __name__ == "__main__":
+    main()

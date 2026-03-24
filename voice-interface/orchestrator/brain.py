@@ -1,16 +1,17 @@
 """
-Claude API brain for the orchestrator via LiteLLM proxy.
+Claude brain for the Jarvis orchestrator.
 
-Replaces Codex CLI with direct Claude API calls for speed and reliability.
-  - claude-haiku : quick questions, simple tasks  (~1-2s)
-  - claude-sonnet: complex tasks, tool use         (~2-4s)
+Primary path: Anthropic SDK with adaptive thinking (claude-opus-4-6).
+Secondary: Claude Code CLI (`claude -p`) — uses Claude Pro subscription.
+Tertiary: LiteLLM proxy (claude-haiku/claude-sonnet) if CLI unavailable.
+Final fallback: Ollama qwen2.5:3b for simple/knowledge queries.
 
 Features:
   - Streaming responses -> sentence-by-sentence TTS
   - Tool use: run_shell, read_pane
+  - Adaptive thinking for complex queries (claude-opus-4-6)
   - Persistent memory across sessions (JarvisMemory)
   - Conversation history within a session
-  - Fallback to Ollama if LiteLLM unavailable
 
 Uses the requests library for raw HTTP calls to avoid openai SDK version issues.
 """
@@ -23,6 +24,11 @@ import time
 from typing import Generator, Iterator, List, Optional
 
 import requests
+try:
+    import anthropic as _anthropic_lib
+    _ANTHROPIC_SDK_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_SDK_AVAILABLE = False
 
 from screen import get_screen_context, get_screen_context_with_vision
 from local_llm import classify_intent, quick_answer, _ollama_available
@@ -125,6 +131,28 @@ TOOLS_SCHEMA = [
         }
     }
 ]
+
+# ── Anthropic API key loader ─────────────────────────────────────────────
+
+_LITELLM_ENV_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "litellm", "env"
+)
+
+def _load_anthropic_key():
+    """Return ANTHROPIC_API_KEY from environment or litellm/env file."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key:
+        return key
+    try:
+        with open(os.path.abspath(_LITELLM_ENV_PATH)) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("ANTHROPIC_API_KEY="):
+                    return line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return ""
+
 
 # ── Tool execution ───────────────────────────────────────────────────────
 
@@ -304,6 +332,205 @@ class Brain:
         messages.append({"role": "user", "content": "{}{}".format(rag_prefix, user_text)})
         return messages
 
+    # ── Primary: Anthropic SDK with adaptive thinking ────────────────────
+
+    def _anthropic_sdk_think(self, user_text, mode):
+        """Stream using Anthropic SDK directly with adaptive thinking.
+
+        Uses claude-opus-4-6 with thinking: {type: adaptive} for full mode,
+        or claude-haiku-4-5 for quick mode.  Yields sentences for TTS, or
+        None as a sentinel if the SDK/key is unavailable.
+        """
+        if not _ANTHROPIC_SDK_AVAILABLE:
+            yield None
+            return
+
+        api_key = _load_anthropic_key()
+        if not api_key:
+            print("[Brain] Anthropic API key not found, skipping SDK path.", flush=True)
+            yield None
+            return
+
+        client = _anthropic_lib.Anthropic(api_key=api_key)
+
+        if mode == "quick":
+            model = "claude-haiku-4-5"
+            thinking_param = None
+            max_tokens = 512
+        else:
+            model = "claude-opus-4-6"
+            thinking_param = {"type": "adaptive"}
+            max_tokens = 4096
+
+        system = self._build_system(
+            "" if mode == "quick"
+            else get_screen_context(include_windows=True)
+        )
+
+        messages = []
+        for entry in self.history[-MAX_HISTORY:]:
+            messages.append({"role": "user", "content": entry["user"]})
+            messages.append({"role": "assistant", "content": entry["response"]})
+
+        rag_prefix = ""
+        if _kb:
+            try:
+                results = _kb.search(user_text, n_results=2)
+                relevant = [r for r in results if r.get("distance", 999) < 1.5]
+                if relevant:
+                    rag_ctx = "\n".join("- {}".format(r["document"][:150]) for r in relevant)
+                    rag_prefix = "Relevant knowledge:\n{}\n\n".format(rag_ctx)
+            except Exception:
+                pass
+
+        messages.append({"role": "user", "content": "{}{}".format(rag_prefix, user_text)})
+
+        # Build Anthropic SDK-style tools
+        sdk_tools = [
+            {
+                "name": "run_shell",
+                "description": (
+                    "Execute a shell command and return its output. "
+                    "Use for: tmux, bd task tracking, xdotool desktop control, "
+                    "git, file operations, system info."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "Shell command to run."}
+                    },
+                    "required": ["command"],
+                },
+            },
+            {
+                "name": "read_pane",
+                "description": "Read recent output from a tmux window.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "window": {"type": "integer", "description": "tmux window index"},
+                        "lines": {"type": "integer", "description": "Lines to read (default 20)"},
+                    },
+                    "required": ["window"],
+                },
+            },
+        ]
+
+        use_tools = (mode != "quick")
+        print("[Brain] Anthropic SDK: model={} thinking={}".format(
+            model, thinking_param is not None), flush=True)
+
+        text_buf = ""
+        yielded_anything = False
+
+        for _round in range(MAX_TOOL_ROUNDS):
+            create_kwargs = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system,
+                "messages": messages,
+            }
+            if thinking_param:
+                create_kwargs["thinking"] = thinking_param
+            if use_tools:
+                create_kwargs["tools"] = sdk_tools
+                create_kwargs["tool_choice"] = {"type": "auto"}
+
+            try:
+                if not use_tools:
+                    # True streaming for quick/no-tool path
+                    with client.messages.stream(**create_kwargs) as stream:
+                        for event in stream:
+                            if (event.type == "content_block_delta"
+                                    and hasattr(event.delta, "text")):
+                                text_buf += event.delta.text
+                                sentences, text_buf = _extract_sentences(text_buf)
+                                for s in sentences:
+                                    yielded_anything = True
+                                    yield s
+                    if text_buf.strip() and len(text_buf.strip()) >= 8:
+                        yielded_anything = True
+                        yield text_buf.strip()
+                    break
+
+                else:
+                    # Non-streaming for reliable tool_use detection
+                    response = client.messages.create(**create_kwargs)
+                    finish = response.stop_reason
+
+                    if finish != "tool_use":
+                        # Collect text and thinking blocks
+                        for block in response.content:
+                            if block.type == "text":
+                                text = block.text.strip()
+                                if text:
+                                    sentences, remainder = _extract_sentences(text + " ")
+                                    for s in sentences:
+                                        yielded_anything = True
+                                        yield s
+                                    if remainder.strip() and len(remainder.strip()) >= 8:
+                                        yielded_anything = True
+                                        yield remainder.strip()
+                        break
+
+                    # Execute tool calls
+                    tool_uses = [b for b in response.content if b.type == "tool_use"]
+                    if not tool_uses:
+                        break
+
+                    # Append assistant turn (include thinking blocks for context)
+                    asst_content = []
+                    for block in response.content:
+                        if block.type == "thinking":
+                            asst_content.append({
+                                "type": "thinking",
+                                "thinking": block.thinking,
+                                "signature": block.signature,
+                            })
+                        elif block.type == "tool_use":
+                            asst_content.append({
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": block.input,
+                            })
+                        elif block.type == "text" and block.text:
+                            asst_content.append({"type": "text", "text": block.text})
+                    messages.append({"role": "assistant", "content": asst_content})
+
+                    tool_results = []
+                    for tu in tool_uses:
+                        result_str = _execute_tool(tu.name, tu.input)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": result_str[:3000],
+                        })
+                    messages.append({"role": "user", "content": tool_results})
+
+                    if _round == MAX_TOOL_ROUNDS - 2:
+                        messages.append({
+                            "role": "user",
+                            "content": "Now summarize in 1-2 spoken sentences. No tools.",
+                        })
+                        use_tools = False
+
+            except _anthropic_lib.AuthenticationError:
+                print("[Brain] Anthropic auth error — bad API key.", flush=True)
+                yield None
+                return
+            except _anthropic_lib.RateLimitError:
+                print("[Brain] Anthropic rate limit hit.", flush=True)
+                yield None
+                return
+            except Exception as e:
+                print("[Brain] Anthropic SDK error: {}".format(e), flush=True)
+                yield None
+                return
+
+        if not yielded_anything:
+            yield None  # sentinel: fall back
+
     def _clean(self, text):
         """Strip markdown formatting unsuitable for TTS."""
         text = re.sub(r'```[^`]*```', '', text, flags=re.DOTALL)
@@ -315,11 +542,129 @@ class Brain:
 
     # ── Primary: streaming think ─────────────────────────────────────────
 
+    # ── Primary: Claude Code CLI ─────────────────────────────────────────
+
+    def _claude_code_think(self, user_text, mode):
+        """Call `claude -p` as a subprocess to use the Claude Pro subscription.
+
+        Yields sentences as they stream from stdout, or None as final sentinel
+        if there was no output (caller should fall back to LiteLLM).
+        CLAUDECODE env var is unset to bypass nested session restriction.
+        """
+        system_parts = [SYSTEM_BASE]
+        mem_str = self.memory.format_for_prompt()
+        if mem_str:
+            system_parts.append(mem_str)
+        hub = _load_hub_brief()
+        if hub:
+            system_parts.append("HUB CONTEXT:\n{}".format(hub))
+        if mode == "full":
+            screen_ctx = get_screen_context(include_windows=True)
+            if screen_ctx:
+                system_parts.append("SCREEN STATE:\n{}".format(screen_ctx))
+
+        history_text = ""
+        for entry in self.history[-MAX_HISTORY:]:
+            history_text += "User: {}\nJarvis: {}\n".format(
+                entry["user"], entry["response"]
+            )
+
+        full_prompt = "{}\n\n{}User: {}".format(
+            "\n\n".join(system_parts), history_text, user_text
+        ).strip()
+
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE")}
+
+        print("[Brain] Calling claude --print (Claude Pro)...", flush=True)
+        try:
+            proc = subprocess.Popen(
+                ["claude", "--print", full_prompt, "--dangerously-skip-permissions"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=os.path.expanduser("~"),
+            )
+        except FileNotFoundError:
+            print("[Brain] claude CLI not found, falling back.", flush=True)
+            return
+
+        text_buf = ""
+        yielded_anything = False
+        try:
+            # claude --print may take 10-30s on first response; stream stdout lines
+            for line in proc.stdout:
+                text_buf += line
+                sentences, text_buf = _extract_sentences(text_buf)
+                for s in sentences:
+                    s = self._clean(s)
+                    if s:
+                        yielded_anything = True
+                        yield s
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        except Exception as e:
+            print("[Brain] claude --print read error: {}".format(e), flush=True)
+
+        if text_buf.strip() and len(text_buf.strip()) >= 8:
+            cleaned = self._clean(text_buf.strip())
+            if cleaned:
+                yielded_anything = True
+                yield cleaned
+
+        if not yielded_anything:
+            try:
+                stderr = proc.stderr.read(300).strip()
+            except Exception:
+                stderr = ""
+            print("[Brain] claude -p no output. stderr: {}".format(stderr), flush=True)
+            yield None  # sentinel: fall back to LiteLLM
+
     def think_streaming(self, user_text, mode="full"):
         """Stream the response as a generator of complete sentences.
 
-        Pipeline: local Ollama fast path -> LiteLLM Claude -> tool use loop
+        Pipeline:
+          1. Anthropic SDK with adaptive thinking (claude-opus-4-6)
+          2. Claude Code CLI (Pro subscription)
+          3. LiteLLM proxy (claude-sonnet/haiku)
+          4. Ollama qwen2.5:3b (local fallback)
         """
+        # ── Primary: Anthropic SDK with adaptive thinking ──────────────
+        sentences = []
+        try:
+            for sentence in self._anthropic_sdk_think(user_text, mode):
+                if sentence is None:
+                    break
+                sentences.append(sentence)
+                yield self._clean(sentence)
+
+            if sentences:
+                self.history.append({"user": user_text, "response": " ".join(sentences)})
+                return
+        except Exception as e:
+            print("[Brain] Anthropic SDK error: {}".format(e), flush=True)
+
+        print("[Brain] Falling back to Claude Code CLI...", flush=True)
+
+        # ── Secondary: Claude Code CLI (uses Claude Pro subscription) ──
+        sentences = []
+        try:
+            for sentence in self._claude_code_think(user_text, mode):
+                if sentence is None:
+                    # Sentinel: no output, fall through to LiteLLM
+                    break
+                sentences.append(sentence)
+                yield sentence
+
+            if sentences:
+                self.history.append({"user": user_text, "response": " ".join(sentences)})
+                return
+        except Exception as e:
+            print("[Brain] Claude Code CLI error: {}".format(e), flush=True)
+
+        print("[Brain] Falling back to LiteLLM...", flush=True)
+
         # ── Local Ollama fast path ───────────────────────────────────
         if _ollama_available():
             intent = classify_intent(user_text)

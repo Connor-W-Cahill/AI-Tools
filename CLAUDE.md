@@ -20,6 +20,20 @@ ai ad       # Aider
 ai ?        # Help
 ```
 
+## Claude Agent CLI (`tools/agent`)
+
+Agentic one-shot tasks using **claude-opus-4-6** with adaptive thinking + tool use:
+
+```bash
+tools/agent "task description"                        # run task (high effort)
+tools/agent --effort max "hard reasoning task"        # max thinking depth
+tools/agent --model claude-sonnet-4-6 "fast task"     # cheaper/faster model
+tools/agent --max-turns 20 "long multi-step task"     # more turns
+```
+
+Tools available: `run_shell`, `read_file`, `write_file`, `list_directory`.
+Uses `ANTHROPIC_API_KEY` from env or `litellm/env` automatically.
+
 ## Jira Integration (Required)
 
 When the user mentions a Jira task, ticket, board, or project — **always** use the Jira CLI:
