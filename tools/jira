@@ -12,10 +12,19 @@ Usage:
   jira open <key>              Open ticket in browser
   jira me                      Show your user info
   jira route <summary>         Show which project a task would go to
+  jira todo                    Combined todo: Jira issues + Confluence tasks
+  jira confluence pages [SPACE]      List recent Confluence pages
+  jira confluence search <query>     Search Confluence (CQL)
+  jira confluence tasks              Your incomplete Confluence inline tasks
+  jira confluence view <page-id>     View a Confluence page
+  jira sync                          Pull assigned Jira issues + Confluence tasks → beads
+  jira start <key>                   Transition Jira → In Progress + beads in_progress
+  jira done <key>                    Transition Jira → Done + close beads issue
 """
 
 import sys
 import os
+import re
 import json
 import webbrowser
 import secrets
@@ -31,14 +40,17 @@ TOKEN_FILE  = Path.home() / ".config" / "jira" / "tokens.json"
 AUTH_URL    = "https://auth.atlassian.com/authorize"
 TOKEN_URL   = "https://auth.atlassian.com/oauth/token"
 RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
-SCOPES      = "read:jira-work write:jira-work read:jira-user read:board-scope:jira-software offline_access"
+SCOPES      = ("read:jira-work write:jira-work read:jira-user "
+               "read:board-scope:jira-software offline_access "
+               "read:page:confluence read:task:confluence read:space:confluence")
 
 # ── ANSI colors ──────────────────────────────────────────────────────────────
 if sys.stdout.isatty():
     R='\033[31m'; G='\033[32m'; Y='\033[33m'; B='\033[34m'
     M='\033[35m'; C='\033[36m'; W='\033[1m';  N='\033[0m'
+    D='\033[2m'   # dim
 else:
-    R=G=Y=B=M=C=W=N=''
+    R=G=Y=B=M=C=W=N=D=''
 
 
 def load_config():
@@ -443,6 +455,305 @@ def cmd_create(summary_arg=None):
         print(f"{Y}Note: beads sync failed (bd not in PATH?){N}\n")
 
 
+# ── Confluence helpers ────────────────────────────────────────────────────────
+
+def confluence_get(path, token, cloud_id):
+    url = f"https://api.atlassian.com/ex/confluence/{cloud_id}/wiki/rest/api{path}"
+    return http_get(url, token)
+
+
+def _extract_text(node, limit=300):
+    """Recursively pull plain text from an Atlassian Document Format node."""
+    parts = []
+    if isinstance(node, dict):
+        if node.get("type") == "text":
+            parts.append(node.get("text", ""))
+        for child in node.get("content", []):
+            parts.extend(_extract_text(child))
+    return parts[:limit]
+
+
+# ── Combined todo ─────────────────────────────────────────────────────────────
+
+def cmd_todo():
+    """Combined todo list: Jira (in-progress / to-do) + Confluence inline tasks."""
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+
+    # ── Jira issues ──────────────────────────────────────────────────────────
+    jql = urllib.parse.quote(
+        "assignee = currentUser() AND statusCategory != Done ORDER BY priority ASC, updated DESC"
+    )
+    jira_data = jira_get(
+        f"/search/jql?jql={jql}&maxResults=25"
+        "&fields=summary,status,priority,project",
+        cfg, token, cloud_id,
+    )
+    jira_issues = (jira_data or {}).get("issues", [])
+
+    # ── Confluence tasks ──────────────────────────────────────────────────────
+    conf_data = confluence_get(
+        "/inlinetasks/search?assignee=currentUser&status=incomplete&limit=20",
+        token, cloud_id,
+    )
+    conf_tasks = (conf_data or {}).get("results", [])
+
+    # ── Render ────────────────────────────────────────────────────────────────
+    any_items = bool(jira_issues or conf_tasks)
+    if not any_items:
+        print(f"\n{G}All clear — no open todos!{N}\n")
+        return
+
+    if jira_issues:
+        print(f"\n{W}── Jira ({len(jira_issues)}) ──────────────────────────────────────────────{N}")
+        print(f"{D}{'Key':<14} {'Pri':<8} {'Status':<20} Summary{N}")
+        print("─" * 76)
+        for i in jira_issues:
+            key     = i.get("key", "")
+            f       = i.get("fields", {})
+            summary = (f.get("summary") or "")[:40]
+            status  = (f.get("status") or {}).get("name", "")[:18]
+            pri     = (f.get("priority") or {}).get("name", "")[:6]
+            pcol    = R if pri == "Highest" else Y if pri in ("High", "Medium") else G
+            print(f"  {C}{key:<12}{N} {pcol}{pri:<8}{N} {status:<20} {summary}")
+
+    if conf_tasks:
+        print(f"\n{W}── Confluence tasks ({len(conf_tasks)}) ─────────────────────────────────{N}")
+        print(f"{D}{'Page':<32} {'Due':<12} Task{N}")
+        print("─" * 76)
+        for t in conf_tasks:
+            page    = (t.get("pageTitle") or "")[:30]
+            space   = t.get("spaceKey", "")
+            due     = (t.get("dueDate") or "")[:10] or "—"
+            desc_nds = t.get("description", {})
+            texts   = _extract_text(desc_nds)
+            desc    = " ".join(texts)[:45] if texts else "(no text)"
+            page_id = t.get("pageId", "")
+            url     = (f"https://statlerits.atlassian.net/wiki/spaces/{space}"
+                       f"/pages/{page_id}") if page_id else ""
+            due_col = R if due != "—" and due < "2026" else Y if due != "—" else N
+            print(f"  {B}{page:<32}{N} {due_col}{due:<12}{N} {desc}")
+
+    print()
+
+
+# ── Confluence commands ───────────────────────────────────────────────────────
+
+def cmd_confluence(subcmd=None, *args):
+    """Confluence subcommands: pages, search, tasks, view."""
+    if subcmd is None or subcmd in ("-h", "--help", "help"):
+        print(f"Usage: jira confluence <pages [SPACE] | search <query> | tasks | view <id>>")
+        return
+
+    cfg = load_config()
+    token, tokens = get_token(cfg)
+    cloud_id = get_cloud_id(token, tokens)
+
+    if subcmd == "pages":
+        space_key = args[0].upper() if args else None
+        if space_key:
+            path = (f"/content?type=page&spaceKey={space_key}"
+                    "&expand=space,version&limit=20&orderby=modified+desc")
+        else:
+            path = "/content?type=page&expand=space,version&limit=20&orderby=modified+desc"
+        data = confluence_get(path, token, cloud_id)
+        pages = (data or {}).get("results", [])
+        if not pages:
+            print("No pages found.")
+            return
+        print(f"\n{W}{'ID':<12} {'Space':<8} {'Modified':<12} Title{N}")
+        print("─" * 72)
+        for p in pages:
+            pid   = str(p.get("id", ""))
+            title = (p.get("title") or "")[:42]
+            sp    = (p.get("space") or {}).get("key", "")
+            mod   = ((p.get("version") or {}).get("when") or "")[:10]
+            print(f"  {C}{pid:<10}{N} {Y}{sp:<8}{N} {mod:<12} {title}")
+        print()
+
+    elif subcmd == "search":
+        if not args:
+            die("Usage: jira confluence search <query>")
+        query = " ".join(args)
+        cql   = urllib.parse.quote(f'type=page AND text ~ "{query}" ORDER BY lastModified DESC')
+        data  = confluence_get(f"/content/search?cql={cql}&limit=15&expand=space", token, cloud_id)
+        results = (data or {}).get("results", [])
+        if not results:
+            print(f"No results for: {query}")
+            return
+        print(f"\n{W}Results for '{query}':{N}")
+        print("─" * 72)
+        for p in results:
+            pid   = str(p.get("id", ""))
+            title = (p.get("title") or "")[:50]
+            sp    = (p.get("space") or {}).get("key", "")
+            print(f"  {C}{pid:<10}{N} {Y}[{sp}]{N} {title}")
+        print()
+
+    elif subcmd == "tasks":
+        data  = confluence_get(
+            "/inlinetasks/search?assignee=currentUser&status=incomplete&limit=30",
+            token, cloud_id,
+        )
+        tasks = (data or {}).get("results", [])
+        if not tasks:
+            print(f"\n{G}No incomplete Confluence tasks assigned to you.{N}\n")
+            return
+        print(f"\n{W}Your incomplete Confluence tasks ({len(tasks)}):{N}")
+        print("─" * 72)
+        for t in tasks:
+            page    = (t.get("pageTitle") or "")[:28]
+            space   = t.get("spaceKey", "")
+            due     = (t.get("dueDate") or "")[:10] or "—"
+            page_id = t.get("pageId", "")
+            texts   = _extract_text(t.get("description", {}))
+            desc    = " ".join(texts)[:50] if texts else "(no text)"
+            due_col = R if due != "—" and due < "2026" else Y if due != "—" else N
+            link    = (f"https://statlerits.atlassian.net/wiki/spaces/{space}"
+                       f"/pages/{page_id}") if page_id else ""
+            print(f"  {B}{page:<30}{N} due {due_col}{due}{N}  {desc}")
+            if link:
+                print(f"    {D}{link}{N}")
+        print()
+
+    elif subcmd == "view":
+        if not args:
+            die("Usage: jira confluence view <page-id>")
+        page_id = args[0]
+        data = confluence_get(
+            f"/content/{page_id}?expand=body.view,space,version,ancestors",
+            token, cloud_id,
+        )
+        if not data:
+            die(f"Page {page_id} not found.")
+        title   = data.get("title", "Untitled")
+        space   = (data.get("space") or {}).get("key", "")
+        ver     = (data.get("version") or {}).get("number", "?")
+        by      = ((data.get("version") or {}).get("by") or {}).get("displayName", "?")
+        when    = ((data.get("version") or {}).get("when") or "")[:10]
+        ancestors = [a.get("title","") for a in (data.get("ancestors") or [])]
+        breadcrumb = " > ".join(ancestors + [title]) if ancestors else title
+
+        print(f"\n{W}{breadcrumb}{N}")
+        print(f"{D}Space:{N} {space}  {D}Version:{N} {ver}  {D}Updated:{N} {when} by {by}\n")
+
+        # Strip HTML tags from body.view for a rough plain-text preview
+        body_html = (data.get("body") or {}).get("view", {}).get("value", "")
+        body_text = re.sub(r"<[^>]+>", " ", body_html)
+        body_text = re.sub(r"\s{2,}", " ", body_text).strip()
+        print(body_text[:1200])
+        print()
+
+    else:
+        die(f"Unknown confluence subcommand: {subcmd}\n"
+            "Available: pages, search, tasks, view")
+
+
+# ── Beads integration ─────────────────────────────────────────────────────────
+
+_BEADS_JSONL = Path(__file__).resolve().parent.parent / ".beads" / "issues.jsonl"
+
+
+def _beads_issues():
+    if not _BEADS_JSONL.exists():
+        return []
+    out = []
+    with open(_BEADS_JSONL) as f:
+        for ln in f:
+            ln = ln.strip()
+            if ln:
+                try: out.append(json.loads(ln))
+                except json.JSONDecodeError: pass
+    return out
+
+
+def _find_beads_id(jira_key):
+    pat = f"[{jira_key}]"
+    return next((i.get("id") for i in _beads_issues()
+                 if i.get("status") not in ("closed","done") and pat in i.get("title","")), None)
+
+
+def _jira_transition(key, name_frag, cfg, token, cloud_id):
+    """Return (ok, message). Applies first transition matching name_frag. Handles 204."""
+    transitions = (jira_get(f"/issue/{key}/transitions", cfg, token, cloud_id) or {}).get("transitions", [])
+    frag  = name_frag.lower()
+    match = next((t for t in transitions if frag in t.get("name", "").lower()), None)
+    if not match:
+        return False, f"no match for '{name_frag}'; available: {[t.get('name') for t in transitions]}"
+    url  = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/issue/{key}/transitions"
+    body = json.dumps({"transition": {"id": match["id"]}}).encode()
+    req  = urllib.request.Request(url, data=body,
+           headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req): pass
+        return True, match["name"]
+    except urllib.error.HTTPError as e:
+        return False, f"HTTP {e.code}: {e.read().decode()}"
+
+
+def _beads_jira_status(key, jira_frag, bd_cmd, bd_status_label):
+    key = key.upper()
+    cfg = load_config(); token, tokens = get_token(cfg); cloud_id = get_cloud_id(token, tokens)
+    ok, msg = _jira_transition(key, jira_frag, cfg, token, cloud_id)
+    print(f"{G if ok else Y}Jira:{N} {key} → {msg}")
+    bd_id = _find_beads_id(key)
+    if bd_id:
+        ret = os.system(f"{bd_cmd} {bd_id} 2>/dev/null")
+        print(f"{G if ret == 0 else Y}Beads:{N} {bd_id} → {bd_status_label}")
+    else:
+        print(f"{D}Beads: no open issue found for {key}{N}")
+
+
+def cmd_start(key):
+    _beads_jira_status(key, "progress", "bd update --status=in_progress", "in_progress")
+
+
+def cmd_done(key):
+    _beads_jira_status(key, "done", "bd close", "closed")
+
+
+def cmd_sync():
+    """Pull assigned Jira issues + Confluence tasks → beads (idempotent)."""
+    cfg = load_config(); token, tokens = get_token(cfg); cloud_id = get_cloud_id(token, tokens)
+    bd = _beads_issues()
+    existing_jira   = {m.group(1) for i in bd
+                       for m in [re.search(r'\[([A-Z]+-\d+)\]', i.get("title",""))] if m}
+    existing_titles = {i.get("title","") for i in bd}
+
+    PRI = {"Highest": 0, "High": 1, "Medium": 2, "Low": 3, "Lowest": 4}
+    jql = urllib.parse.quote("assignee = currentUser() AND statusCategory != Done ORDER BY priority ASC")
+    jira_issues = (jira_get(f"/search/jql?jql={jql}&maxResults=50&fields=summary,status,priority",
+                            cfg, token, cloud_id) or {}).get("issues", [])
+    j_new = j_skip = 0
+    for issue in jira_issues:
+        ikey = issue.get("key","")
+        if ikey in existing_jira: j_skip += 1; continue
+        f = issue.get("fields",{}); summary = f.get("summary","")
+        status = (f.get("status") or {}).get("name","")
+        pri    = PRI.get((f.get("priority") or {}).get("name","Medium"), 2)
+        jira_url = cfg["jira_url"]
+        notes = f"Jira: {jira_url}/browse/{ikey} | Status: {status}"
+        ret = os.system(f'bd create --title={json.dumps(f"[{ikey}] {summary}")} --type=task '
+                        f'--priority={pri} --notes={json.dumps(notes)} 2>/dev/null')
+        j_new += (ret == 0)
+
+    conf_tasks = (confluence_get("/inlinetasks/search?assignee=currentUser&status=incomplete&limit=30",
+                                  token, cloud_id) or {}).get("results",[])
+    c_new = 0
+    for t in conf_tasks:
+        page = t.get("pageTitle",""); texts = _extract_text(t.get("description",{}))
+        title = f"[Confluence] {page}: {' '.join(texts)[:60] if texts else '(no text)'}"[:90]
+        if title in existing_titles: continue
+        space = t.get("spaceKey",""); pid = t.get("pageId","")
+        url   = f"https://statlerits.atlassian.net/wiki/spaces/{space}/pages/{pid}" if pid else ""
+        notes = f"Confluence task on '{page}'" + (f": {url}" if url else "")
+        ret = os.system(f'bd create --title={json.dumps(title)} --type=task '
+                        f'--priority=2 --notes={json.dumps(notes)} 2>/dev/null')
+        c_new += (ret == 0)
+    print(f"\n{G}Sync complete:{N} Jira {j_new} new, {j_skip} skipped  •  Confluence {c_new} new\n")
+
+
 def cmd_route(summary):
     """Show which project a task description would route to."""
     proj_key, reason = route_project(summary)
@@ -458,14 +769,19 @@ def usage():
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 COMMANDS = {
-    "auth":   (cmd_auth,   0),
-    "me":     (cmd_me,     0),
-    "boards": (cmd_boards, 0),
-    "issues": (cmd_issues, -1),  # optional arg
-    "view":   (cmd_view,   1),
-    "open":   (cmd_open,   1),
-    "create": (cmd_create, -1),  # optional summary arg
-    "route":  (cmd_route,  1),
+    "auth":       (cmd_auth,       0),
+    "me":         (cmd_me,         0),
+    "boards":     (cmd_boards,     0),
+    "issues":     (cmd_issues,     -1),  # optional arg
+    "view":       (cmd_view,       1),
+    "open":       (cmd_open,       1),
+    "create":     (cmd_create,     -1),  # optional summary arg
+    "route":      (cmd_route,      1),
+    "todo":       (cmd_todo,       0),
+    "confluence": (cmd_confluence, -1),  # subcmd + optional args
+    "sync":       (cmd_sync,       0),
+    "start":      (cmd_start,      1),
+    "done":       (cmd_done,       1),
 }
 
 if __name__ == "__main__":

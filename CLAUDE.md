@@ -30,6 +30,9 @@ python3 tools/jira create "task description"  # create ticket (auto-routes + syn
 python3 tools/jira issues [PROJECT]           # list issues
 python3 tools/jira view PROJ-123              # view a ticket
 python3 tools/jira open PROJ-123              # open in browser
+python3 tools/jira sync                       # pull all assigned Jira + Confluence tasks → beads
+python3 tools/jira start PROJ-123             # Jira → In Progress + beads in_progress
+python3 tools/jira done PROJ-123              # Jira → Done + beads closed
 ```
 
 **Projects** (auto-routing by keyword):
@@ -47,6 +50,8 @@ python3 tools/jira open PROJ-123              # open in browser
 
 **Rules:**
 - Creating a Jira ticket ALWAYS also creates a beads issue (auto-synced)
+- `jira sync` pulls ALL assigned open Jira issues + Confluence tasks into beads (idempotent)
+- `jira start`/`jira done` transition both Jira and beads simultaneously
 - Use `jira route "..."` to verify routing before creating if unsure
 - Config: `~/.config/jira/config.json` | Tokens: `~/.config/jira/tokens.json`
 - Re-auth if token expires: `python3 tools/jira auth`
