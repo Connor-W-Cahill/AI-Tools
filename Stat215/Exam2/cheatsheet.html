@@ -102,11 +102,15 @@
     <span class="f">Continuous: σ² = ∫(x−μ)² f(x)dx</span>
     <span class="f">σ = √σ² &nbsp;(standard deviation)</span>
 
-    <h3>Variance of g(X) — Other Functions</h3>
-    <span class="f">σ²<sub>g(X)</sub> = E{[g(X) − μ<sub>g(X)</sub>]²}</span>
-    <span class="f">Discrete: Var[g(X)] = Σ[g(x)−μ<sub>g</sub>]² f(x)</span>
-    <span class="f">Continuous: Var[g(X)] = ∫[g(x)−μ<sub>g</sub>]² f(x)dx</span>
-    <span class="note">Find μ<sub>g</sub> first via E[g(X)], then compute variance</span>
+    <h3>Computation Steps (use shortcut always)</h3>
+    <span class="note"><span class="key">Discrete:</span> 1. μ=Σxf(x) &nbsp;2. E(X²)=Σx²f(x) &nbsp;3. Var=E(X²)−μ²</span>
+    <span class="note"><span class="key">Continuous:</span> 1. μ=∫xf(x)dx &nbsp;2. E(X²)=∫x²f(x)dx &nbsp;3. Var=E(X²)−μ²</span>
+    <span class="note">Ex: f(x)=2(x−1), 1&lt;x&lt;2 → μ=5/3, E(X²)=17/6, Var=17/6−(5/3)²=<span class="key">1/18</span></span>
+
+    <h3>Variance of g(X)</h3>
+    <span class="f">Var[g(X)] = E{[g(X)−μ<sub>g</sub>]²} = E[g(X)²]−μ<sub>g</sub>²</span>
+    <span class="note">Find μ<sub>g</sub>=E[g(X)] first, then Var[g(X)]=E[g(X)²]−μ<sub>g</sub>²</span>
+    <span class="note">Linear: Var(aX+b)=a²Var(X) &nbsp;|&nbsp; Non-linear: must compute directly</span>
   </div>
 
   <div class="box">
@@ -140,6 +144,10 @@
       <li>σ<sub>XY</sub> ≈ 0 → weak linear relationship</li>
       <li>Independent → σ<sub>XY</sub>=0, but <span class="warn">NOT the reverse!</span></li>
     </ul>
+    <h3>Computation Steps (Shortcut)</h3>
+    <span class="note">1. μ<sub>X</sub>=Σxg(x), μ<sub>Y</sub>=Σyh(y) from marginals</span>
+    <span class="note">2. E(XY)=Σ<sub>x</sub>Σ<sub>y</sub> xy·f(x,y) &nbsp;← sum over joint table</span>
+    <span class="note">3. σ<sub>XY</sub>=E(XY)−μ<sub>X</sub>μ<sub>Y</sub></span>
   </div>
 
   <div class="box">
@@ -177,6 +185,17 @@
 
 <!-- ===== COL 2: CH5 PART 1 ===== -->
 <div class="col">
+
+  <div class="box">
+    <h2>CH5: Discrete Uniform Distribution</h2>
+    <span class="f">f(x) = 1/k &nbsp;for x = x<sub>1</sub>, x<sub>2</sub>, ..., x<sub>k</sub> &nbsp;(k equally-likely outcomes)</span>
+    <span class="f">E(X) = (x<sub>1</sub> + x<sub>k</sub>)/2 &nbsp;&nbsp; Var(X) = (k²−1)/12 &nbsp;(for x=1,2,...,k)</span>
+    <ul>
+      <li>All outcomes equally likely; total probability = 1</li>
+      <li>Fair die: k=6, E(X)=3.5, Var(X)=35/12≈2.917</li>
+      <li>E(XY) = E(X)·E(Y) if two independent uniforms (e.g. 2 dice)</li>
+    </ul>
+  </div>
 
   <div class="box">
     <h2>CH5: Which Distribution to Use?</h2>
@@ -400,17 +419,19 @@
     <h3>Key Z-Table Values to Know</h3>
     <table>
       <tr><th>z</th><th>P(Z&lt;z)</th><th>z</th><th>P(Z&lt;z)</th></tr>
-      <tr><td>−2.00</td><td>0.0228</td><td>1.00</td><td>0.8413</td></tr>
-      <tr><td>−1.96</td><td>0.0250</td><td>1.28</td><td>0.8997</td></tr>
-      <tr><td>−1.645</td><td>0.0500</td><td>1.41</td><td>0.9207</td></tr>
-      <tr><td>−1.30</td><td>0.0968</td><td>1.645</td><td>0.9500</td></tr>
-      <tr><td>−1.00</td><td>0.1587</td><td>1.96</td><td>0.9750</td></tr>
-      <tr><td>−0.64</td><td>0.2611</td><td>2.00</td><td>0.9772</td></tr>
+      <tr><td>−2.33</td><td>0.0099</td><td>0.52</td><td>0.6985</td></tr>
+      <tr><td>−2.00</td><td>0.0228</td><td>0.84</td><td>0.7995</td></tr>
+      <tr><td>−1.96</td><td>0.0250</td><td>1.00</td><td>0.8413</td></tr>
+      <tr><td>−1.645</td><td>0.0500</td><td>1.28</td><td>0.8997</td></tr>
+      <tr><td>−1.28</td><td>0.1003</td><td>1.41</td><td>0.9207</td></tr>
+      <tr><td>−1.00</td><td>0.1587</td><td>1.645</td><td>0.9500</td></tr>
+      <tr><td>−0.84</td><td>0.2005</td><td>1.96</td><td>0.9750</td></tr>
+      <tr><td>−0.52</td><td>0.3015</td><td>2.00</td><td>0.9772</td></tr>
       <tr><td>0.00</td><td>0.5000</td><td>2.33</td><td>0.9901</td></tr>
       <tr><td>0.42</td><td>0.6628</td><td>2.58</td><td>0.9951</td></tr>
     </table>
-    <h3>Between Two Values: P(−1.45 &lt; Z &lt; 0.42)</h3>
-    <span class="note">= P(Z&lt;0.42) − P(Z&lt;−1.45) = 0.6628 − 0.0735 = <span class="key">0.5893</span></span>
+    <h3>Symmetry: P(Z&lt;−z) = 1−P(Z&lt;z) &nbsp;|&nbsp; P(−z&lt;Z&lt;z) = 2P(Z&lt;z)−1</h3>
+    <span class="note">P(−1.45&lt;Z&lt;0.42) = 0.6628−0.0735 = <span class="key">0.5893</span></span>
   </div>
 
   <div class="box">
@@ -441,7 +462,12 @@
     <span class="note">z = (2.3−3.0)/0.5 = −1.40 &nbsp;→&nbsp; P(Z&lt;−1.40) = NORM.S.DIST(−1.40) = <span class="key">0.0808</span></span>
     <h3>Ball bearings X~N(3.0, 0.005). P(scrap) = P(X&lt;2.99 or X&gt;3.01)?</h3>
     <span class="note">z₁=(2.99−3)/0.005=−2, z₂=(3.01−3)/0.005=+2</span>
-    <span class="note">P(scrap) = P(Z&lt;−2)+P(Z&gt;2) = 0.0228+0.0228 = <span class="key">0.0456 (4.56%)</span></span>
+    <span class="note">P(scrap) = P(Z&lt;−2)+P(Z&gt;2) = 0.0228+0.0228 = <span class="key">0.0456</span></span>
+    <h3>Inverse Normal: Find x given probability</h3>
+    <span class="f"><span class="key">x = μ + z·σ</span> &nbsp;where z = NORM.S.INV(p)</span>
+    <span class="note">X~N(50,10). Find x where P(X&lt;x)=0.90: z=1.28, x=50+1.28(10)=<span class="key">62.8</span></span>
+    <span class="note">X~N(50,10). Find x where P(X&gt;x)=0.05: P(X&lt;x)=0.95, z=1.645, x=50+1.645(10)=<span class="key">66.45</span></span>
+    <span class="note">X~N(50,10). Find x where P(X&lt;x)=0.10: z=−1.28, x=50−1.28(10)=<span class="key">37.2</span></span>
   </div>
 
 </div><!-- end col2 p2 -->
@@ -515,14 +541,23 @@
 
   <div class="box">
     <h2>Problem-Solving Steps</h2>
-    <h3>Normal probability problem</h3>
-    <span class="note">1. Identify μ and σ &nbsp; 2. Draw picture! &nbsp; 3. Shade region &nbsp; 4. Convert to z: z=(x−μ)/σ &nbsp; 5. Use table/Excel &nbsp; 6. Adjust for direction (1− if right tail)</span>
+    <h3>Normal probability (forward: x → P)</h3>
+    <span class="note">1. Identify μ and σ &nbsp; 2. Draw &amp; shade &nbsp; 3. z=(x−μ)/σ &nbsp; 4. Table/Excel &nbsp; 5. 1−P if right tail</span>
+    <h3>Inverse Normal (backward: P → x)</h3>
+    <span class="note">1. Identify P(X&lt;x)=p &nbsp; 2. z=NORM.S.INV(p) from table or Excel &nbsp; 3. x=μ+z·σ</span>
+    <span class="note">If P(X&gt;x)=p → P(X&lt;x)=1−p, then z=NORM.S.INV(1−p)</span>
     <h3>Binomial probability</h3>
-    <span class="note">1. Identify n, p, q=1−p &nbsp; 2. Use formula, table (A.1), or Excel &nbsp; 3. Watch: &lt; vs ≤ for discrete!</span>
+    <span class="note">1. n, p, q=1−p &nbsp; 2. formula/table A.1/Excel &nbsp; 3. &lt; vs ≤ matter for discrete!</span>
     <h3>Poisson probability</h3>
-    <span class="note">1. Identify λ and t (compute λt) &nbsp; 2. Adjust t if interval changes &nbsp; 3. Use formula, table (A.2), or Excel &nbsp; 4. For range: P(X=x) = P(X≤x)−P(X≤x−1)</span>
+    <span class="note">1. λ and t → compute λt &nbsp; 2. Scale t if interval changes &nbsp; 3. P(X=x)=P(X≤x)−P(X≤x−1)</span>
     <h3>Chebyshev's Theorem</h3>
-    <span class="note">1. Find σ &nbsp; 2. k = distance from μ / σ &nbsp; 3. P ≥ 1−1/k²</span>
+    <span class="note">1. σ=√Var &nbsp; 2. k=|bound−μ|/σ &nbsp; 3. P≥1−1/k²</span>
+    <h3>E(X) and Var(X) from scratch</h3>
+    <span class="note">Discrete: μ=Σxf(x), Var=Σ(x−μ)²f(x) or E(X²)−μ²</span>
+    <span class="note">Continuous: μ=∫xf(x)dx, Var=E(X²)−μ² where E(X²)=∫x²f(x)dx</span>
+    <h3>JMP (Normal Distribution)</h3>
+    <span class="note">Analyze → Distribution → col → Normal → enter μ,σ for probabilities</span>
+    <span class="note">Or use Excel: NORM.DIST / NORM.INV / NORM.S.DIST / NORM.S.INV</span>
   </div>
 
 </div><!-- end col3 p2 -->
