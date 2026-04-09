@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>STAT 215 Exam 2 Cheat Sheet</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 7.2pt; line-height: 1.25; color: #000; }
+
+  .page {
+    width: 8.5in;
+    min-height: 11in;
+    padding: 0.28in 0.28in 0.2in 0.28in;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 5px;
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: avoid; }
+  .title-bar {
+    grid-column: 1 / -1;
+    background: #1a3a6b;
+    color: white;
+    text-align: center;
+    font-size: 9pt;
+    font-weight: bold;
+    padding: 2px 4px;
+    margin-bottom: 2px;
+    border-radius: 2px;
+  }
+  .col { display: flex; flex-direction: column; gap: 4px; }
+
+  .box { border: 1px solid #555; border-radius: 2px; padding: 3px 4px; }
+  .box h2 {
+    font-size: 7.8pt; font-weight: bold;
+    background: #1a3a6b; color: white;
+    margin: -3px -4px 3px -4px;
+    padding: 2px 5px; border-radius: 1px 1px 0 0;
+  }
+  .box h3 {
+    font-size: 7pt; font-weight: bold; color: #1a3a6b;
+    border-bottom: 1px solid #99b; margin: 3px 0 2px 0;
+  }
+  .f {
+    font-family: "Times New Roman", serif; font-size: 7.5pt;
+    background: #f4f4ff; padding: 1px 4px; margin: 1px 0;
+    border-left: 2px solid #1a3a6b; display: block;
+  }
+  .key { font-weight: bold; color: #990000; }
+  .note { font-style: italic; color: #444; font-size: 6.5pt; }
+  .warn { color: #cc0000; font-weight: bold; font-size: 6.8pt; }
+  .good { color: #006600; font-weight: bold; }
+  ul { padding-left: 11px; }
+  li { margin: 1px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 6.8pt; }
+  td, th { border: 1px solid #999; padding: 1px 3px; }
+  th { background: #dde; font-weight: bold; text-align: center; }
+  td { text-align: center; }
+  td.L { text-align: left; }
+
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { page-break-after: always; }
+  }
+  @page { size: letter; margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- ======================================================= PAGE 1 ======================================================= -->
+<div class="page">
+<div class="title-bar">STAT 215 — Exam 2 Cheat Sheet &nbsp;|&nbsp; Ch. 4 (2nd half) · Ch. 5 · Ch. 6</div>
+
+<!-- ===== COL 1: CH 4 SECOND HALF ===== -->
+<div class="col">
+
+  <div class="box">
+    <h2>CH4: Variance of X</h2>
+    <span class="f">σ² = Var(X) = E[(X−μ)²]</span>
+    <span class="f"><span class="key">Shortcut:</span> Var(X) = E(X²) − μ²</span>
+    <span class="f">Discrete: σ² = Σ(x−μ)² f(x)</span>
+    <span class="f">Continuous: σ² = ∫(x−μ)² f(x)dx</span>
+    <span class="f">σ = √σ² &nbsp;(standard deviation)</span>
+
+    <h3>Variance of g(X) — Other Functions</h3>
+    <span class="f">σ²<sub>g(X)</sub> = E{[g(X) − μ<sub>g(X)</sub>]²}</span>
+    <span class="f">Discrete: Var[g(X)] = Σ[g(x)−μ<sub>g</sub>]² f(x)</span>
+    <span class="f">Continuous: Var[g(X)] = ∫[g(x)−μ<sub>g</sub>]² f(x)dx</span>
+    <span class="note">Find μ<sub>g</sub> first via E[g(X)], then compute variance</span>
+  </div>
+
+  <div class="box">
+    <h2>CH4: Variance Properties (CRITICAL)</h2>
+    <ul>
+      <li>Var(aX + b) = <span class="key">a²</span>·Var(X) &nbsp;— constant b has <span class="key">NO</span> effect</li>
+      <li>Var(3X + 5) = <span class="key">9</span>·Var(X) &nbsp;← not 3, not 14</li>
+      <li>Multiply by a → variance × a²</li>
+      <li>Add constant → variance unchanged</li>
+    </ul>
+    <h3>Linear Combos: aX + bY + c</h3>
+    <span class="f">Var(aX+bY+c) = a²σ²<sub>X</sub> + b²σ²<sub>Y</sub> + <span class="key">2ab</span>·σ<sub>XY</sub></span>
+    <span class="f">Var(aX−bY+c) = a²σ²<sub>X</sub> + b²σ²<sub>Y</sub> − <span class="key">2ab</span>·σ<sub>XY</sub></span>
+    <span class="f">Var(X+Y) = σ²<sub>X</sub> + σ²<sub>Y</sub> + 2·Cov(XY)</span>
+    <span class="f">Var(X−Y) = σ²<sub>X</sub> + σ²<sub>Y</sub> − 2·Cov(XY)</span>
+    <ul>
+      <li>X,Y <span class="good">independent</span>: Cov=0 → Var(X±Y)=σ²<sub>X</sub>+σ²<sub>Y</sub></li>
+      <li>X,Y <span class="warn">non-linear</span> transforms change distribution shape</li>
+    </ul>
+    <h3>Expected Value Rules</h3>
+    <span class="f">E(aX + b) = a·E(X) + b</span>
+    <span class="f">E(X ± Y) = E(X) ± E(Y) &nbsp;(always)</span>
+    <span class="f">E(XY) = E(X)·E(Y) &nbsp;only if <span class="key">independent</span></span>
+  </div>
+
+  <div class="box">
+    <h2>CH4: Covariance</h2>
+    <span class="f">σ<sub>XY</sub> = E[(X−μ<sub>X</sub>)(Y−μ<sub>Y</sub>)]</span>
+    <span class="f"><span class="key">Shortcut:</span> σ<sub>XY</sub> = E(XY) − μ<sub>X</sub>·μ<sub>Y</sub></span>
+    <span class="f">Discrete: Σ<sub>x</sub>Σ<sub>y</sub>(x−μ<sub>X</sub>)(y−μ<sub>Y</sub>)f(x,y)</span>
+    <span class="f">Continuous: ∫∫(x−μ<sub>X</sub>)(y−μ<sub>Y</sub>)f(x,y)dx dy</span>
+    <ul>
+      <li>σ<sub>XY</sub> &gt; 0 → X &amp; Y move <span class="good">together</span></li>
+      <li>σ<sub>XY</sub> &lt; 0 → X &amp; Y move <span class="warn">inversely</span></li>
+      <li>σ<sub>XY</sub> ≈ 0 → weak linear relationship</li>
+      <li>Independent → σ<sub>XY</sub>=0, but <span class="warn">NOT the reverse!</span></li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <h2>CH4: Correlation Coefficient</h2>
+    <span class="f">ρ<sub>XY</sub> = σ<sub>XY</sub> / (σ<sub>X</sub> · σ<sub>Y</sub>)</span>
+    <span class="f">−1 ≤ ρ<sub>XY</sub> ≤ 1</span>
+    <ul>
+      <li>Scale-free measure of <em>linear</em> association</li>
+      <li>Measures strength AND direction</li>
+      <li>ρ=0 when X,Y independent (converse not always true)</li>
+      <li>Covariance = direction only; Correlation = direction + strength</li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <h2>CH4: Chebyshev's Theorem</h2>
+    <span class="f">P(μ−kσ &lt; X &lt; μ+kσ) ≥ 1 − 1/k²</span>
+    <table>
+      <tr><th>k</th><th>At least…</th></tr>
+      <tr><td>2</td><td><span class="key">75%</span> within 2σ</td></tr>
+      <tr><td>3</td><td><span class="key">88.89%</span> within 3σ</td></tr>
+      <tr><td>4</td><td><span class="key">93.75%</span> within 4σ</td></tr>
+    </table>
+    <ul>
+      <li>Works for <span class="key">ANY</span> distribution (no shape assumption)</li>
+      <li>Sets a weak <em>lower bound</em> — actual % is usually higher</li>
+      <li>Normal distribution gives tighter results (68-95-99.7)</li>
+    </ul>
+    <h3>Steps for Chebyshev problems</h3>
+    <span class="note">1. Find σ=√σ²  &nbsp; 2. Distance from mean = |bound−μ|  &nbsp; 3. k=distance/σ  &nbsp; 4. P ≥ 1−1/k²</span>
+    <span class="note">Example: μ=8, σ²=9(σ=3), find P(−4&lt;X&lt;20): distance=12, k=12/3=4, P≥1−1/16=<span class="key">93.75%</span></span>
+  </div>
+
+</div><!-- end col1 -->
+
+<!-- ===== COL 2: CH5 PART 1 ===== -->
+<div class="col">
+
+  <div class="box">
+    <h2>CH5: Which Distribution to Use?</h2>
+    <table>
+      <tr><th class="L">Situation</th><th>Distribution</th></tr>
+      <tr><td class="L">Count successes in n fixed trials, 2 outcomes</td><td><span class="key">Binomial</span></td></tr>
+      <tr><td class="L">Count successes in n fixed trials, k&gt;2 outcomes</td><td><span class="key">Multinomial</span></td></tr>
+      <tr><td class="L">P(k<sup>th</sup> success occurs on x<sup>th</sup> trial)</td><td><span class="key">Neg. Binomial</span></td></tr>
+      <tr><td class="L">P(1<sup>st</sup> success occurs on x<sup>th</sup> trial)</td><td><span class="key">Geometric</span></td></tr>
+      <tr><td class="L">Count events in time or space interval</td><td><span class="key">Poisson</span></td></tr>
+      <tr><td class="L">Single outcome equally likely from k possibilities</td><td><span class="key">Disc. Uniform</span></td></tr>
+    </table>
+  </div>
+
+  <div class="box">
+    <h2>CH5: Binomial Distribution</h2>
+    <span class="f">b(x; n, p) = C(n,x) · p<sup>x</sup> · q<sup>n−x</sup> &nbsp;&nbsp; x=0,1,...,n; q=1−p</span>
+    <span class="f"><span class="key">E(X) = np &nbsp;&nbsp; Var(X) = npq &nbsp;&nbsp; Skewness = (q−p)/√(npq)</span></span>
+    <ul>
+      <li>n = # trials; p = P(success); q = P(failure) = 1−p</li>
+      <li>p=0.5 → symmetric | p&lt;0.5 → right skew | p&gt;0.5 → left skew</li>
+      <li>Notation: X~Bin(n,p)</li>
+    </ul>
+    <h3>Reading the CDF Table (Table A.1)</h3>
+    <ul>
+      <li>Table gives P(X ≤ r) for given n and p</li>
+      <li>P(X &lt; 10) = P(X ≤ <span class="key">9</span>) &nbsp;← use r=9, not 10</li>
+      <li>P(4 ≤ X ≤ 7) = P(X≤7) − P(X≤<span class="key">3</span>)</li>
+      <li>P(X ≥ 6) = 1 − P(X≤5)</li>
+    </ul>
+    <h3>Excel</h3>
+    <span class="f">=BINOM.DIST(x, n, p, FALSE) → exact P(X=x)</span>
+    <span class="f">=BINOM.DIST(x, n, p, TRUE) → cumulative P(X≤x)</span>
+    <span class="f">P(4≤X≤7): =BINOM.DIST(7,n,p,TRUE)−BINOM.DIST(3,n,p,TRUE)</span>
+    <span class="warn">Probabilities do NOT scale with n! Recalculate each problem.</span>
+  </div>
+
+  <div class="box">
+    <h2>CH5: Multinomial Distribution</h2>
+    <span class="f">f = [n! / (x₁!x₂!···xₖ!)] · p₁<sup>x₁</sup>p₂<sup>x₂</sup>···pₖ<sup>xₖ</sup></span>
+    <span class="f">E(Xᵢ) = n·pᵢ &nbsp;&nbsp; Var(Xᵢ) = n·pᵢ·qᵢ</span>
+    <ul>
+      <li>Generalization of binomial to k &gt; 2 outcomes</li>
+      <li>Requires: Σxᵢ = n &nbsp;and&nbsp; Σpᵢ = 1</li>
+      <li><span class="warn">Scale dependent</span> — must recalculate for different n</li>
+    </ul>
+    <span class="note">Excel: =MULTINOMIAL(x₁,x₂,...)·p₁^x₁·p₂^x₂·... &nbsp;(multiply separately)</span>
+  </div>
+
+  <div class="box">
+    <h2>CH5: Negative Binomial</h2>
+    <span class="f">P(X=x) = C(x−1, k−1) · p<sup>k</sup> · q<sup>x−k</sup> &nbsp;&nbsp; x=k, k+1, ...</span>
+    <span class="f">E(X) = <span class="key">pr/(1−p)</span> &nbsp;&nbsp; Var(X) = pr/(1−p)² &nbsp;&nbsp; (r=x−k)</span>
+    <ul>
+      <li>k = number of successes needed; x = trial where k-th success occurs</li>
+      <li>Last trial is <em>always</em> a success; arrange k−1 successes in x−1 prior trials</li>
+    </ul>
+    <span class="note">Excel: =NEGBINOM.DIST(r, k, p, FALSE) where r = x−k = # failures before k-th success</span>
+    <span class="note">Example: 5th success on 7th trial, p=0.6: P(X=7)=C(6,4)(0.6)⁵(0.4)²=<span class="key">0.1866</span></span>
+  </div>
+
+</div><!-- end col2 -->
+
+<!-- ===== COL 3: CH5 PART 2 ===== -->
+<div class="col">
+
+  <div class="box">
+    <h2>CH5: Geometric Distribution</h2>
+    <span class="f">g(x; p) = p · q<sup>x−1</sup> &nbsp;&nbsp; x = 1, 2, 3, ...</span>
+    <span class="f">E(X) = <span class="key">1/p</span> &nbsp;&nbsp; Var(X) = (1−p)/p²</span>
+    <ul>
+      <li>Special case of Neg. Binomial with k=1</li>
+      <li>X = trial number of the <em>first</em> success</li>
+      <li>Always right-skewed (long right tail)</li>
+    </ul>
+    <span class="note">Excel: =NEGBINOM.DIST(x−1, 1, p, FALSE) &nbsp;← r=x−1 failures before 1st success</span>
+    <span class="note">Example p=0.05, P(X=5) = (0.05)(0.95)⁴ = <span class="key">0.0407</span> &nbsp;|&nbsp; E(X)=1/0.05=20</span>
+  </div>
+
+  <div class="box">
+    <h2>CH5: Poisson Distribution</h2>
+    <span class="f">p(x; λt) = e<sup>−λt</sup>(λt)<sup>x</sup> / x! &nbsp;&nbsp; x = 0, 1, 2, ...</span>
+    <span class="f"><span class="key">E(X) = Var(X) = λt</span> &nbsp;&nbsp; (mean = variance always!)</span>
+    <span class="f">Skewness = (λt)<sup>−½</sup></span>
+    <ul>
+      <li>λ = avg rate per unit time/distance/area</li>
+      <li>t = specific time/region of interest</li>
+      <li>Events are independent; no memory</li>
+      <li>Larger λt → more symmetric distribution</li>
+    </ul>
+    <h3>Changing the Time Interval</h3>
+    <span class="note">If λ=4/ms and you want 2ms window → new λt = 4×2 = <span class="key">8</span></span>
+    <h3>Using Poisson CDF Table (Table A.2)</h3>
+    <span class="note">Table gives P(X≤r) for given μ=λt</span>
+    <span class="note">P(X=6) = P(X≤6) − P(X≤5) &nbsp;(subtract consecutive rows)</span>
+    <span class="note">Example: λt=4, P(X=6) = 0.8893 − 0.7851 = <span class="key">0.1042</span></span>
+    <h3>Excel</h3>
+    <span class="f">=POISSON.DIST(x, λt, FALSE) → exact P(X=x)</span>
+    <span class="f">=POISSON.DIST(x, λt, TRUE) → cumulative P(X≤x)</span>
+  </div>
+
+  <div class="box">
+    <h2>CH5: Poisson Approximation to Binomial</h2>
+    <span class="f"><span class="key">Use when: n &gt; 20 AND np &lt; 5 (or nq &lt; 5)</span></span>
+    <span class="f">Set μ = λt = np, then use Poisson formula</span>
+    <span class="note">Rare events, many trials → Poisson is easier and equally accurate</span>
+    <span class="note">Example: p=0.005, n=400 → np=2, use Poisson with λt=2</span>
+  </div>
+
+  <div class="box">
+    <h2>Distribution Summary Table</h2>
+    <table>
+      <tr><th>Dist.</th><th>E(X)</th><th>Var(X)</th></tr>
+      <tr><td class="L">Binomial(n,p)</td><td>np</td><td>npq</td></tr>
+      <tr><td class="L">Multinomial</td><td>npᵢ</td><td>npᵢqᵢ</td></tr>
+      <tr><td class="L">Neg. Bin(k,p)</td><td>pr/(1−p)</td><td>pr/(1−p)²</td></tr>
+      <tr><td class="L">Geometric(p)</td><td>1/p</td><td>(1−p)/p²</td></tr>
+      <tr><td class="L">Poisson(λt)</td><td>λt</td><td>λt</td></tr>
+      <tr><td class="L">Uniform(A,B)</td><td>(A+B)/2</td><td>(B−A)²/12</td></tr>
+      <tr><td class="L">Normal(μ,σ)</td><td>μ</td><td>σ²</td></tr>
+    </table>
+  </div>
+
+  <div class="box">
+    <h2>Binomial Skewness Reminder</h2>
+    <span class="f">Skewness = (q−p)/√(npq)</span>
+    <ul>
+      <li>p = 0.5 → <span class="good">symmetric</span>, regardless of n</li>
+      <li>p &lt; 0.5 → <span class="warn">right-skewed</span> (positive skewness)</li>
+      <li>p &gt; 0.5 → left-skewed (negative skewness)</li>
+      <li>Larger n with p near 0.5 → more symmetric</li>
+    </ul>
+  </div>
+
+</div><!-- end col3 -->
+</div><!-- end page 1 -->
+
+
+<!-- ======================================================= PAGE 2 ======================================================= -->
+<div class="page">
+<div class="title-bar">STAT 215 — Exam 2 Cheat Sheet &nbsp;|&nbsp; Chapter 6: Continuous Probability Distributions</div>
+
+<!-- ===== COL 1: UNIFORM + NORMAL INTRO ===== -->
+<div class="col">
+
+  <div class="box">
+    <h2>CH6: Uniform Distribution</h2>
+    <span class="f">X~Unif(A,B): &nbsp; f(x) = 1/(B−A), &nbsp; A≤x≤B</span>
+    <span class="f"><span class="key">E(X) = (A+B)/2</span></span>
+    <span class="f"><span class="key">Var(X) = (B−A)²/12</span></span>
+    <span class="f">P(a≤X≤b) = (b−a)·f(x) = (b−a)/(B−A)</span>
+    <ul>
+      <li>Rectangle: base = B−A, height = 1/(B−A), area = 1</li>
+      <li>Probability = area of rectangle = base × height</li>
+      <li>Symmetric distribution</li>
+    </ul>
+    <h3>Example: X~Unif(1,4)</h3>
+    <span class="note">f(x) = 1/3 &nbsp;|&nbsp; E(X) = 5/2 = 2.5 &nbsp;|&nbsp; Var(X) = 9/12 = 3/4</span>
+    <span class="note">P(X≤3) = (3−1)·(1/3) = 2/3 = 0.667</span>
+    <h3>Computing E(X) and Var(X) from scratch (integral)</h3>
+    <span class="f">E(X) = ∫<sub>A</sub><sup>B</sup> x·[1/(B−A)] dx = (B²−A²)/[2(B−A)] = (A+B)/2</span>
+    <span class="f">E(X²) = (B³−A³)/[3(B−A)] = (B²+AB+A²)/3</span>
+    <span class="f">Var(X) = E(X²) − μ² = (B−A)²/12</span>
+  </div>
+
+  <div class="box">
+    <h2>CH6: Normal Distribution</h2>
+    <span class="f">X~N(μ,σ): f(x) = (1/√(2πσ)) · e<sup>−(x−μ)²/2σ²</sup></span>
+    <span class="f">E(X) = μ &nbsp;&nbsp; Var(X) = σ²</span>
+    <ul>
+      <li>Bell-shaped, symmetric about μ</li>
+      <li>Mean = Median = Mode (all at center μ)</li>
+      <li>Inflection points at <span class="key">μ ± σ</span></li>
+      <li>Approaches x-axis asymptotically (never touches)</li>
+      <li>Total area under curve = 1</li>
+      <li>Characterized by exactly two parameters: μ and σ</li>
+    </ul>
+    <h3>Empirical Rule (68-95-99.7)</h3>
+    <table>
+      <tr><th>Range</th><th>Approx. %</th></tr>
+      <tr><td>μ ± 1σ</td><td><span class="key">68%</span></td></tr>
+      <tr><td>μ ± 2σ</td><td><span class="key">95%</span></td></tr>
+      <tr><td>μ ± 3σ</td><td><span class="key">99.7%</span></td></tr>
+    </table>
+    <h3>Two Normals with Different μ: same σ → same shape, shifted</h3>
+    <h3>Two Normals with Different σ: wider σ → flatter, lower peak; smaller σ → taller, narrower</h3>
+  </div>
+
+  <div class="box">
+    <h2>CH6: Standard Normal Distribution</h2>
+    <span class="f">Z~N(0,1): mean=0, std dev=1</span>
+    <span class="f"><span class="key">z = (x − μ) / σ</span> &nbsp;← standardize any normal to Z</span>
+    <ul>
+      <li>z-score = # of standard deviations x is from μ</li>
+      <li>z &gt; 0: x is above mean &nbsp;|&nbsp; z &lt; 0: x is below mean</li>
+      <li>Standard Normal table gives P(Z &lt; z) — area to the LEFT</li>
+    </ul>
+    <h3>Area Calculations</h3>
+    <table>
+      <tr><th>Want</th><th>How</th></tr>
+      <tr><td class="L">P(X &lt; a)</td><td class="L">Convert to z, read table directly</td></tr>
+      <tr><td class="L">P(X &gt; a)</td><td class="L">1 − P(Z &lt; z)</td></tr>
+      <tr><td class="L">P(a &lt; X &lt; b)</td><td class="L">P(Z&lt;z₂) − P(Z&lt;z₁)</td></tr>
+      <tr><td class="L">P(X = a)</td><td class="L">= 0 (continuous!)</td></tr>
+    </table>
+    <span class="warn">ALWAYS draw a picture first!</span>
+  </div>
+
+</div><!-- end col1 p2 -->
+
+<!-- ===== COL 2: Z-SCORES, REVERSE, EXCEL ===== -->
+<div class="col">
+
+  <div class="box">
+    <h2>CH6: Using the Z-Table</h2>
+    <h3>Forward: x → probability</h3>
+    <span class="note">1. Compute z = (x−μ)/σ &nbsp; 2. Look up z in table → get P(Z&lt;z) &nbsp; 3. Adjust for direction</span>
+    <h3>Reverse: probability → x</h3>
+    <span class="f"><span class="key">x = μ + z·σ</span></span>
+    <span class="note">1. Find desired probability in table body &nbsp; 2. Read off z &nbsp; 3. Apply x = μ + z·σ</span>
+    <h3>Key Z-Table Values to Know</h3>
+    <table>
+      <tr><th>z</th><th>P(Z&lt;z)</th><th>z</th><th>P(Z&lt;z)</th></tr>
+      <tr><td>−2.00</td><td>0.0228</td><td>1.00</td><td>0.8413</td></tr>
+      <tr><td>−1.96</td><td>0.0250</td><td>1.28</td><td>0.8997</td></tr>
+      <tr><td>−1.645</td><td>0.0500</td><td>1.41</td><td>0.9207</td></tr>
+      <tr><td>−1.30</td><td>0.0968</td><td>1.645</td><td>0.9500</td></tr>
+      <tr><td>−1.00</td><td>0.1587</td><td>1.96</td><td>0.9750</td></tr>
+      <tr><td>−0.64</td><td>0.2611</td><td>2.00</td><td>0.9772</td></tr>
+      <tr><td>0.00</td><td>0.5000</td><td>2.33</td><td>0.9901</td></tr>
+      <tr><td>0.42</td><td>0.6628</td><td>2.58</td><td>0.9951</td></tr>
+    </table>
+    <h3>Between Two Values: P(−1.45 &lt; Z &lt; 0.42)</h3>
+    <span class="note">= P(Z&lt;0.42) − P(Z&lt;−1.45) = 0.6628 − 0.0735 = <span class="key">0.5893</span></span>
+  </div>
+
+  <div class="box">
+    <h2>CH6: Excel Normal Formulas</h2>
+    <span class="f">=NORM.DIST(x, μ, σ, TRUE) → P(X≤x)</span>
+    <span class="f">=NORM.DIST(x, μ, σ, FALSE) → pdf value at x (rarely needed)</span>
+    <span class="f">=NORM.S.DIST(z, TRUE) → P(Z≤z)</span>
+    <span class="f">=NORM.INV(p, μ, σ) → x value where P(X≤x)=p</span>
+    <span class="f">=NORM.S.INV(p) → z value where P(Z≤z)=p</span>
+    <h3>Common Patterns</h3>
+    <span class="f">P(Z&gt;2) = 1−NORM.S.DIST(2,TRUE) = 1−0.9772 = 0.0228</span>
+    <span class="f">P(Z&gt;−1) = 1−NORM.S.DIST(−1,TRUE) = 1−0.1587 = 0.8413</span>
+    <span class="f">P(−1&lt;Z&lt;2) = NORM.S.DIST(2,TRUE)−NORM.S.DIST(−1,TRUE)</span>
+  </div>
+
+  <div class="box">
+    <h2>CH6: Z-Score Examples</h2>
+    <h3>X~N(50,10). Find probabilities:</h3>
+    <table>
+      <tr><th>Find</th><th>z</th><th>Answer</th></tr>
+      <tr><td class="L">P(X&lt;50)</td><td>0</td><td><span class="key">0.5000</span> (by inspection)</td></tr>
+      <tr><td class="L">P(X&lt;60)</td><td>1.0</td><td>0.8413</td></tr>
+      <tr><td class="L">P(X&gt;70)</td><td>2.0</td><td>1−0.9772=0.0228</td></tr>
+      <tr><td class="L">P(X&gt;40)</td><td>−1.0</td><td>1−0.1587=0.8413</td></tr>
+      <tr><td class="L">P(40&lt;X&lt;70)</td><td>−1 to 2</td><td>0.9772−0.1587=0.8185</td></tr>
+    </table>
+    <h3>Battery life X~N(3.0, 0.5). P(X&lt;2.3)?</h3>
+    <span class="note">z = (2.3−3.0)/0.5 = −1.40 &nbsp;→&nbsp; P(Z&lt;−1.40) = NORM.S.DIST(−1.40) = <span class="key">0.0808</span></span>
+    <h3>Ball bearings X~N(3.0, 0.005). P(scrap) = P(X&lt;2.99 or X&gt;3.01)?</h3>
+    <span class="note">z₁=(2.99−3)/0.005=−2, z₂=(3.01−3)/0.005=+2</span>
+    <span class="note">P(scrap) = P(Z&lt;−2)+P(Z&gt;2) = 0.0228+0.0228 = <span class="key">0.0456 (4.56%)</span></span>
+  </div>
+
+</div><!-- end col2 p2 -->
+
+<!-- ===== COL 3: NORMAL APPROX + CONTINUITY + TRICKY STUFF ===== -->
+<div class="col">
+
+  <div class="box">
+    <h2>CH6: Normal Approx. to Binomial</h2>
+    <span class="f"><span class="key">Condition: np ≥ 5 AND nq ≥ 5</span></span>
+    <span class="f">Use Normal with: μ=np &nbsp;|&nbsp; σ=√(npq)</span>
+    <ul>
+      <li>Works best in center of bell curve</li>
+      <li>Better approximation when p near 0.5 and n large</li>
+      <li>Use Z-table after standardizing</li>
+    </ul>
+    <h3>Continuity Correction (adjusting discrete → continuous)</h3>
+    <table>
+      <tr><th>Binomial (discrete)</th><th>Normal approx (continuous)</th></tr>
+      <tr><td>P(X = c)</td><td>P(c−0.5 &lt; X &lt; c+0.5)</td></tr>
+      <tr><td>P(X ≤ c)</td><td>P(X &lt; c + 0.5)</td></tr>
+      <tr><td>P(X &lt; c)</td><td>P(X &lt; c − 0.5)</td></tr>
+      <tr><td>P(X ≥ c)</td><td>P(X &gt; c − 0.5)</td></tr>
+      <tr><td>P(X &gt; c)</td><td>P(X &gt; c + 0.5)</td></tr>
+      <tr><td>P(c₁ &lt; X &lt; c₂)</td><td>P(c₁+0.5 &lt; X &lt; c₂−0.5)</td></tr>
+      <tr><td>P(c₁ ≤ X ≤ c₂)</td><td>P(c₁−0.5 &lt; X &lt; c₂+0.5)</td></tr>
+    </table>
+    <h3>CDF Continuity Correction Formula</h3>
+    <span class="f">P(X≤x) ≈ P(Z ≤ (x+0.5−np)/√(npq))</span>
+    <h3>Example: X~Bin(15,0.4), find P(X≤4)</h3>
+    <span class="note">np=6, nq=9, both≥5 ✓ &nbsp;|&nbsp; z=(4+0.5−6)/√(15·0.4·0.6) = −1.5/√3.6 = −0.79</span>
+    <span class="note">P(Z≤−0.79) = <span class="key">0.2148</span> &nbsp;(exact binomial: 0.2173)</span>
+  </div>
+
+  <div class="box">
+    <h2>CH6: Comparing Poisson vs. Normal Approx</h2>
+    <table>
+      <tr><th>Method</th><th>Use when</th></tr>
+      <tr><td class="L">Poisson approx to Binomial</td><td class="L">n&gt;20 and np&lt;5 (rare events)</td></tr>
+      <tr><td class="L">Normal approx to Binomial</td><td class="L">np≥5 and nq≥5 (common events)</td></tr>
+      <tr><td class="L">Exact Binomial</td><td class="L">Always works (use table/Excel)</td></tr>
+    </table>
+  </div>
+
+  <div class="box">
+    <h2>Critical Traps &amp; Key Facts</h2>
+    <h3>Chapter 4</h3>
+    <ul>
+      <li>Var(aX+b) = <span class="key">a²</span>Var(X) — adding constant does NOTHING</li>
+      <li>Var(3X+5) = 9Var(X), <span class="warn">NOT 14Var(X)</span></li>
+      <li>Cov(X,Y)=0 does <span class="warn">NOT</span> always mean independent</li>
+      <li>Independent DOES mean Cov=0 (one direction only)</li>
+    </ul>
+    <h3>Chapter 5</h3>
+    <ul>
+      <li>P(X&lt;10) ≠ P(X≤10) for <span class="key">discrete</span> RVs!</li>
+      <li>P(X&lt;10) → r=9 in CDF table</li>
+      <li>Poisson: mean <span class="key">always equals</span> variance</li>
+      <li>Geometric: X starts at 1, not 0</li>
+      <li>Neg. Binomial: last trial is <em>always</em> the k-th success</li>
+    </ul>
+    <h3>Chapter 6</h3>
+    <ul>
+      <li>Z-table gives area to the <span class="key">LEFT</span> always</li>
+      <li>P(X=any value) = 0 for continuous RVs</li>
+      <li>Symmetry shortcut: P(X&lt;μ) = 0.5 always</li>
+      <li>P(Z&gt;z) = 1 − P(Z&lt;z)</li>
+      <li>Continuity correction: discrete ± 0.5 → continuous range</li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <h2>Problem-Solving Steps</h2>
+    <h3>Normal probability problem</h3>
+    <span class="note">1. Identify μ and σ &nbsp; 2. Draw picture! &nbsp; 3. Shade region &nbsp; 4. Convert to z: z=(x−μ)/σ &nbsp; 5. Use table/Excel &nbsp; 6. Adjust for direction (1− if right tail)</span>
+    <h3>Binomial probability</h3>
+    <span class="note">1. Identify n, p, q=1−p &nbsp; 2. Use formula, table (A.1), or Excel &nbsp; 3. Watch: &lt; vs ≤ for discrete!</span>
+    <h3>Poisson probability</h3>
+    <span class="note">1. Identify λ and t (compute λt) &nbsp; 2. Adjust t if interval changes &nbsp; 3. Use formula, table (A.2), or Excel &nbsp; 4. For range: P(X=x) = P(X≤x)−P(X≤x−1)</span>
+    <h3>Chebyshev's Theorem</h3>
+    <span class="note">1. Find σ &nbsp; 2. k = distance from μ / σ &nbsp; 3. P ≥ 1−1/k²</span>
+  </div>
+
+</div><!-- end col3 p2 -->
+</div><!-- end page 2 -->
+
+</body>
+</html>
