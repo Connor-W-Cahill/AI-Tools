@@ -70,10 +70,28 @@
 
 <!-- ======================================================= PAGE 1 ======================================================= -->
 <div class="page">
-<div class="title-bar">STAT 215 — Exam 2 Cheat Sheet &nbsp;|&nbsp; Ch. 4 (2nd half) · Ch. 5 · Ch. 6</div>
+<div class="title-bar">STAT 215 — Exam 2 Cheat Sheet &nbsp;|&nbsp; Ch. 4 (all) · Ch. 5 · Ch. 6</div>
 
-<!-- ===== COL 1: CH 4 SECOND HALF ===== -->
+<!-- ===== COL 1: CH 4 ALL ===== -->
 <div class="col">
+
+  <div class="box">
+    <h2>CH4: Expected Value (Mean) of X</h2>
+    <span class="f">Discrete: μ = E(X) = Σ<sub>x</sub> x·f(x)</span>
+    <span class="f">Continuous: μ = E(X) = ∫<sub>−∞</sub><sup>∞</sup> x·f(x) dx</span>
+    <span class="note">Probability-weighted average of all possible values of X</span>
+
+    <h3>Expected Value of g(X)</h3>
+    <span class="f">Discrete: E[g(X)] = Σ<sub>x</sub> g(x)·f(x)</span>
+    <span class="f">Continuous: E[g(X)] = ∫<sub>−∞</sub><sup>∞</sup> g(x)·f(x) dx</span>
+    <span class="note">Replace x·f(x) with g(x)·f(x) — same probability function f(x)!</span>
+    <span class="note">E(aX+b) = a·E(X) + b &nbsp;|&nbsp; E(X±Y) = E(X)±E(Y) <span class="key">(always)</span></span>
+
+    <h3>Expected Value of g(X,Y) — Joint</h3>
+    <span class="f">Discrete: E[g(X,Y)] = Σ<sub>x</sub>Σ<sub>y</sub> g(x,y)·f(x,y)</span>
+    <span class="f">Continuous: E[g(X,Y)] = ∫∫ g(x,y)·f(x,y) dx dy</span>
+    <span class="note">If independent: E(XY) = E(X)·E(Y) &nbsp;|&nbsp; f(x,y)=g(x)h(y) ⇒ independent</span>
+  </div>
 
   <div class="box">
     <h2>CH4: Variance of X</h2>
