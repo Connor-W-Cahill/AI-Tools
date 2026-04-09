@@ -226,10 +226,11 @@
       <li>P(4 ≤ X ≤ 7) = P(X≤7) − P(X≤<span class="key">3</span>)</li>
       <li>P(X ≥ 6) = 1 − P(X≤5)</li>
     </ul>
-    <h3>Excel</h3>
-    <span class="f">=BINOM.DIST(x, n, p, FALSE) → exact P(X=x)</span>
-    <span class="f">=BINOM.DIST(x, n, p, TRUE) → cumulative P(X≤x)</span>
-    <span class="f">P(4≤X≤7): =BINOM.DIST(7,n,p,TRUE)−BINOM.DIST(3,n,p,TRUE)</span>
+    <h3>JMP (Formula Editor: Probability menu)</h3>
+    <span class="f">Binomial Probability(p, n, x) → exact P(X=x)</span>
+    <span class="f">Binomial Distribution(p, n, x) → cumulative P(X≤x)</span>
+    <span class="f">P(4≤X≤7): Binom Dist(p,n,7) − Binom Dist(p,n,3)</span>
+    <span class="note">JMP path: Cols → New Column → formula → Probability → Binomial Distribution</span>
     <span class="warn">Probabilities do NOT scale with n! Recalculate each problem.</span>
   </div>
 
@@ -242,7 +243,7 @@
       <li>Requires: Σxᵢ = n &nbsp;and&nbsp; Σpᵢ = 1</li>
       <li><span class="warn">Scale dependent</span> — must recalculate for different n</li>
     </ul>
-    <span class="note">Excel: =MULTINOMIAL(x₁,x₂,...)·p₁^x₁·p₂^x₂·... &nbsp;(multiply separately)</span>
+    <span class="note">JMP: compute manually — formula editor has no direct multinomial function; use n!/x₁!x₂!···xₖ! × p₁^x₁···pₖ^xₖ</span>
   </div>
 
   <div class="box">
@@ -253,7 +254,7 @@
       <li>k = number of successes needed; x = trial where k-th success occurs</li>
       <li>Last trial is <em>always</em> a success; arrange k−1 successes in x−1 prior trials</li>
     </ul>
-    <span class="note">Excel: =NEGBINOM.DIST(r, k, p, FALSE) where r = x−k = # failures before k-th success</span>
+    <span class="note">JMP: Negative Binomial Probability(p, k, r) where r=x−k = # failures before k-th success</span>
     <span class="note">Example: 5th success on 7th trial, p=0.6: P(X=7)=C(6,4)(0.6)⁵(0.4)²=<span class="key">0.1866</span></span>
   </div>
 
@@ -271,7 +272,7 @@
       <li>X = trial number of the <em>first</em> success</li>
       <li>Always right-skewed (long right tail)</li>
     </ul>
-    <span class="note">Excel: =NEGBINOM.DIST(x−1, 1, p, FALSE) &nbsp;← r=x−1 failures before 1st success</span>
+    <span class="note">JMP: Negative Binomial Probability(p, 1, x−1) &nbsp;← r=x−1 failures before 1st success</span>
     <span class="note">Example p=0.05, P(X=5) = (0.05)(0.95)⁴ = <span class="key">0.0407</span> &nbsp;|&nbsp; E(X)=1/0.05=20</span>
   </div>
 
@@ -292,9 +293,9 @@
     <span class="note">Table gives P(X≤r) for given μ=λt</span>
     <span class="note">P(X=6) = P(X≤6) − P(X≤5) &nbsp;(subtract consecutive rows)</span>
     <span class="note">Example: λt=4, P(X=6) = 0.8893 − 0.7851 = <span class="key">0.1042</span></span>
-    <h3>Excel</h3>
-    <span class="f">=POISSON.DIST(x, λt, FALSE) → exact P(X=x)</span>
-    <span class="f">=POISSON.DIST(x, λt, TRUE) → cumulative P(X≤x)</span>
+    <h3>JMP (Formula Editor)</h3>
+    <span class="f">Poisson Probability(λt, x) → exact P(X=x)</span>
+    <span class="f">Poisson Distribution(λt, x) → cumulative P(X≤x)</span>
   </div>
 
   <div class="box">
@@ -435,16 +436,19 @@
   </div>
 
   <div class="box">
-    <h2>CH6: Excel Normal Formulas</h2>
-    <span class="f">=NORM.DIST(x, μ, σ, TRUE) → P(X≤x)</span>
-    <span class="f">=NORM.DIST(x, μ, σ, FALSE) → pdf value at x (rarely needed)</span>
-    <span class="f">=NORM.S.DIST(z, TRUE) → P(Z≤z)</span>
-    <span class="f">=NORM.INV(p, μ, σ) → x value where P(X≤x)=p</span>
-    <span class="f">=NORM.S.INV(p) → z value where P(Z≤z)=p</span>
-    <h3>Common Patterns</h3>
-    <span class="f">P(Z&gt;2) = 1−NORM.S.DIST(2,TRUE) = 1−0.9772 = 0.0228</span>
-    <span class="f">P(Z&gt;−1) = 1−NORM.S.DIST(−1,TRUE) = 1−0.1587 = 0.8413</span>
-    <span class="f">P(−1&lt;Z&lt;2) = NORM.S.DIST(2,TRUE)−NORM.S.DIST(−1,TRUE)</span>
+    <h2>CH6: JMP Normal Functions</h2>
+    <span class="note"><span class="key">Formula Editor path:</span> Cols → New Column → formula → Probability</span>
+    <span class="f">Normal Distribution(z) → P(Z≤z) &nbsp;[standard normal]</span>
+    <span class="f">Normal Distribution(x, μ, σ) → P(X≤x) &nbsp;[general normal]</span>
+    <span class="f">Normal Quantile(p) → z where P(Z≤z)=p &nbsp;[inverse std normal]</span>
+    <span class="f">Normal Quantile(p, μ, σ) → x where P(X≤x)=p &nbsp;[inverse general]</span>
+    <h3>Common JMP Patterns</h3>
+    <span class="f">P(X&gt;a): 1 − Normal Distribution(a, μ, σ)</span>
+    <span class="f">P(a&lt;X&lt;b): Normal Distribution(b,μ,σ) − Normal Distribution(a,μ,σ)</span>
+    <span class="f">Find x with P(X&lt;x)=0.95: Normal Quantile(0.95, μ, σ)</span>
+    <h3>Analyze → Distribution (interactive)</h3>
+    <span class="note">Analyze → Distribution → select col → red ▼ → Fit Distribution → Normal</span>
+    <span class="note">Then: red ▼ on fitted dist → Prob(X≤x) or Quantile(p) calculator</span>
   </div>
 
   <div class="box">
@@ -464,10 +468,11 @@
     <span class="note">z₁=(2.99−3)/0.005=−2, z₂=(3.01−3)/0.005=+2</span>
     <span class="note">P(scrap) = P(Z&lt;−2)+P(Z&gt;2) = 0.0228+0.0228 = <span class="key">0.0456</span></span>
     <h3>Inverse Normal: Find x given probability</h3>
-    <span class="f"><span class="key">x = μ + z·σ</span> &nbsp;where z = NORM.S.INV(p)</span>
-    <span class="note">X~N(50,10). Find x where P(X&lt;x)=0.90: z=1.28, x=50+1.28(10)=<span class="key">62.8</span></span>
-    <span class="note">X~N(50,10). Find x where P(X&gt;x)=0.05: P(X&lt;x)=0.95, z=1.645, x=50+1.645(10)=<span class="key">66.45</span></span>
-    <span class="note">X~N(50,10). Find x where P(X&lt;x)=0.10: z=−1.28, x=50−1.28(10)=<span class="key">37.2</span></span>
+    <span class="f"><span class="key">x = μ + z·σ</span> &nbsp;where z = Normal Quantile(p)</span>
+    <span class="note">X~N(50,10). P(X&lt;x)=0.90: z=1.28 → x=50+1.28(10)=<span class="key">62.8</span></span>
+    <span class="note">X~N(50,10). P(X&gt;x)=0.05: p=0.95, z=1.645 → x=50+1.645(10)=<span class="key">66.45</span></span>
+    <span class="note">X~N(50,10). P(X&lt;x)=0.10: z=−1.28 → x=50−1.28(10)=<span class="key">37.2</span></span>
+    <span class="note">JMP: Normal Quantile(0.90, 50, 10) = <span class="key">62.8</span> directly</span>
   </div>
 
 </div><!-- end col2 p2 -->
@@ -508,7 +513,7 @@
       <tr><th>Method</th><th>Use when</th></tr>
       <tr><td class="L">Poisson approx to Binomial</td><td class="L">n&gt;20 and np&lt;5 (rare events)</td></tr>
       <tr><td class="L">Normal approx to Binomial</td><td class="L">np≥5 and nq≥5 (common events)</td></tr>
-      <tr><td class="L">Exact Binomial</td><td class="L">Always works (use table/Excel)</td></tr>
+      <tr><td class="L">Exact Binomial</td><td class="L">Always works (use table/JMP)</td></tr>
     </table>
   </div>
 
@@ -542,22 +547,24 @@
   <div class="box">
     <h2>Problem-Solving Steps</h2>
     <h3>Normal probability (forward: x → P)</h3>
-    <span class="note">1. Identify μ and σ &nbsp; 2. Draw &amp; shade &nbsp; 3. z=(x−μ)/σ &nbsp; 4. Table/Excel &nbsp; 5. 1−P if right tail</span>
+    <span class="note">1. Identify μ and σ &nbsp; 2. Draw &amp; shade &nbsp; 3. z=(x−μ)/σ &nbsp; 4. Z-table or JMP &nbsp; 5. 1−P if right tail</span>
     <h3>Inverse Normal (backward: P → x)</h3>
-    <span class="note">1. Identify P(X&lt;x)=p &nbsp; 2. z=NORM.S.INV(p) from table or Excel &nbsp; 3. x=μ+z·σ</span>
-    <span class="note">If P(X&gt;x)=p → P(X&lt;x)=1−p, then z=NORM.S.INV(1−p)</span>
+    <span class="note">1. P(X&lt;x)=p &nbsp; 2. z = Normal Quantile(p) from Z-table &nbsp; 3. x=μ+z·σ</span>
+    <span class="note">P(X&gt;x)=p → P(X&lt;x)=1−p → z = Normal Quantile(1−p)</span>
+    <span class="note">JMP: Normal Quantile(p, μ, σ) gives x directly</span>
     <h3>Binomial probability</h3>
-    <span class="note">1. n, p, q=1−p &nbsp; 2. formula/table A.1/Excel &nbsp; 3. &lt; vs ≤ matter for discrete!</span>
+    <span class="note">1. n, p, q=1−p &nbsp; 2. formula / table A.1 / JMP Binomial Distribution(p,n,x) &nbsp; 3. &lt; vs ≤!</span>
     <h3>Poisson probability</h3>
-    <span class="note">1. λ and t → compute λt &nbsp; 2. Scale t if interval changes &nbsp; 3. P(X=x)=P(X≤x)−P(X≤x−1)</span>
+    <span class="note">1. λ and t → λt &nbsp; 2. Scale t if interval changes &nbsp; 3. P(X=x) = P(X≤x)−P(X≤x−1)</span>
+    <span class="note">JMP: Poisson Probability(λt, x) for exact; Poisson Distribution(λt, x) for CDF</span>
     <h3>Chebyshev's Theorem</h3>
     <span class="note">1. σ=√Var &nbsp; 2. k=|bound−μ|/σ &nbsp; 3. P≥1−1/k²</span>
     <h3>E(X) and Var(X) from scratch</h3>
-    <span class="note">Discrete: μ=Σxf(x), Var=Σ(x−μ)²f(x) or E(X²)−μ²</span>
+    <span class="note">Discrete: μ=Σxf(x), Var=E(X²)−μ² where E(X²)=Σx²f(x)</span>
     <span class="note">Continuous: μ=∫xf(x)dx, Var=E(X²)−μ² where E(X²)=∫x²f(x)dx</span>
-    <h3>JMP (Normal Distribution)</h3>
-    <span class="note">Analyze → Distribution → col → Normal → enter μ,σ for probabilities</span>
-    <span class="note">Or use Excel: NORM.DIST / NORM.INV / NORM.S.DIST / NORM.S.INV</span>
+    <h3>JMP: Analyze → Distribution</h3>
+    <span class="note">Analyze → Distribution → col → red▼ → Fit Distribution → Normal/Poisson/etc.</span>
+    <span class="note">After fitting: red▼ on dist → Quantiles or custom probability calculator</span>
   </div>
 
 </div><!-- end col3 p2 -->
