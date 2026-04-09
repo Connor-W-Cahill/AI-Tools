@@ -5,16 +5,17 @@
 <title>STAT 215 Exam 2 Cheat Sheet</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 7.2pt; line-height: 1.25; color: #000; }
+  body { font-family: Arial, sans-serif; font-size: 6.4pt; line-height: 1.18; color: #000; }
 
   .page {
     width: 8.5in;
-    min-height: 11in;
-    padding: 0.28in 0.28in 0.2in 0.28in;
+    height: 11in;
+    overflow: hidden;
+    padding: 0.18in 0.2in 0.14in 0.2in;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     grid-template-rows: auto 1fr;
-    gap: 5px;
+    gap: 3px;
     page-break-after: always;
   }
   .page:last-child { page-break-after: avoid; }
@@ -23,38 +24,38 @@
     background: #1a3a6b;
     color: white;
     text-align: center;
-    font-size: 9pt;
+    font-size: 8pt;
     font-weight: bold;
-    padding: 2px 4px;
+    padding: 1px 4px;
     margin-bottom: 2px;
     border-radius: 2px;
   }
-  .col { display: flex; flex-direction: column; gap: 4px; }
+  .col { display: flex; flex-direction: column; gap: 2px; }
 
-  .box { border: 1px solid #555; border-radius: 2px; padding: 3px 4px; }
+  .box { border: 1px solid #555; border-radius: 2px; padding: 2px 3px; }
   .box h2 {
-    font-size: 7.8pt; font-weight: bold;
+    font-size: 7pt; font-weight: bold;
     background: #1a3a6b; color: white;
-    margin: -3px -4px 3px -4px;
-    padding: 2px 5px; border-radius: 1px 1px 0 0;
+    margin: -2px -3px 2px -3px;
+    padding: 1px 4px; border-radius: 1px 1px 0 0;
   }
   .box h3 {
-    font-size: 7pt; font-weight: bold; color: #1a3a6b;
-    border-bottom: 1px solid #99b; margin: 3px 0 2px 0;
+    font-size: 6.2pt; font-weight: bold; color: #1a3a6b;
+    border-bottom: 1px solid #99b; margin: 2px 0 1px 0;
   }
   .f {
-    font-family: "Times New Roman", serif; font-size: 7.5pt;
-    background: #f4f4ff; padding: 1px 4px; margin: 1px 0;
+    font-family: "Times New Roman", serif; font-size: 6.8pt;
+    background: #f4f4ff; padding: 1px 3px; margin: 1px 0;
     border-left: 2px solid #1a3a6b; display: block;
   }
   .key { font-weight: bold; color: #990000; }
-  .note { font-style: italic; color: #444; font-size: 6.5pt; }
-  .warn { color: #cc0000; font-weight: bold; font-size: 6.8pt; }
+  .note { font-style: italic; color: #444; font-size: 5.9pt; }
+  .warn { color: #cc0000; font-weight: bold; font-size: 6.2pt; }
   .good { color: #006600; font-weight: bold; }
-  ul { padding-left: 11px; }
-  li { margin: 1px 0; }
-  table { border-collapse: collapse; width: 100%; font-size: 6.8pt; }
-  td, th { border: 1px solid #999; padding: 1px 3px; }
+  ul { padding-left: 9px; }
+  li { margin: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 6.2pt; }
+  td, th { border: 1px solid #999; padding: 0px 2px; }
   th { background: #dde; font-weight: bold; text-align: center; }
   td { text-align: center; }
   td.L { text-align: left; }
@@ -125,10 +126,6 @@
       <li>X,Y <span class="good">independent</span>: Cov=0 → Var(X±Y)=σ²<sub>X</sub>+σ²<sub>Y</sub></li>
       <li>X,Y <span class="warn">non-linear</span> transforms change distribution shape</li>
     </ul>
-    <h3>Expected Value Rules</h3>
-    <span class="f">E(aX + b) = a·E(X) + b</span>
-    <span class="f">E(X ± Y) = E(X) ± E(Y) &nbsp;(always)</span>
-    <span class="f">E(XY) = E(X)·E(Y) &nbsp;only if <span class="key">independent</span></span>
   </div>
 
   <div class="box">
