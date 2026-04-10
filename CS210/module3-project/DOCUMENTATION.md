@@ -4,116 +4,222 @@
 
 ### Overview
 
-`CSVTable` is a file-backed table that persists data to a CSV file in `db/tables/<name>.csv`.
-It implements `FileTable` (extending `Table`, `Flushable`, `AutoCloseable`), `QueryTable`, and
-`PrettyTable`. All table operations are delegated to an in-memory `HashTable`; every mutation
-is immediately flushed to disk so the file is always consistent.
+`CSVTable` is a pure file-backed table that persists all data to a CSV file at
+`db/tables/<name>.csv`. It implements `FileTable` (extending `Table`, `Flushable`,
+`AutoCloseable`), `QueryTable`, and `PrettyTable`. There is no in-memory data structure —
+every operation reads from or writes to the file directly.
 
-### Design Decisions
+### Fields
 
-**Backing Store**
+| Field      | Type         | Description |
+|------------|--------------|-------------|
+| `BASE_DIR` | `static final Path` | Base directory `db/tables/` |
+| `csvFile`  | `final Path` | Path to `db/tables/<name>.csv` |
 
-An internal `HashTable` (`inMemory`) serves as the in-memory layer. This gives O(1) average-case
-put/get/remove and reuses the fingerprint (hashCode) logic already validated in Module 2.
-Only two instance fields are needed:
+Only `Path` fields are used, satisfying the Module 3 forbidden-class restrictions.
 
-| Field      | Type           | Description |
-|------------|----------------|-------------|
-| `csvFile`  | `final Path`   | Path to `db/tables/<name>.csv` |
-| `inMemory` | `final HashTable` | In-memory delegate for all table operations |
-
-Both types are allowed by the Module 3 forbidden-class exemptions (`java.nio.file.Path` and
-the `tables` package).
-
-**File Format**
+### File Format
 
 ```
-col1,col2,col3,...          ← header: comma-separated column names
-key1,S:str,I:42,B:true,N:  ← data row: key (unencoded), then type-tagged values
-key2,N:,I:-7,B:false,S:hi
+"title","genre","year","solo"          ← header: quoted column names
+"Minecraft","sandbox",2011,true        ← data row: quoted key, then encoded values
+"Hades","roguelike",2018,true
+"Valheim","survival",2021,false
 ```
 
-Type encoding for value cells:
+Encoding rules for value cells:
 
-| Prefix  | Java type   | Example encoded |
-|---------|-------------|-----------------|
-| `S:`    | `String`    | `S:hello`       |
-| `I:`    | `Integer`   | `I:42`          |
-| `B:`    | `Boolean`   | `B:true`        |
-| `N:`    | `null`      | `N:`            |
+| Java type   | Encoding          | Example       |
+|-------------|-------------------|---------------|
+| `String`    | double-quoted     | `"hello"`     |
+| `Integer`   | plain number      | `42`          |
+| `Boolean`   | plain true/false  | `true`        |
+| `null`      | empty field       | *(nothing)*   |
 
-Type tags allow exact round-trip reconstruction of all four value types that the test harness
-produces, preserving `hashCode()` compatibility with the control table.
+Keys are always strings and are always double-quoted. Column names in the header are
+also double-quoted. This allows exact round-trip reconstruction of all four value types,
+preserving `hashCode()` compatibility with the control table.
 
-**Constructors**
+### Constructors
 
-- `CSVTable(String newName, List<String> newColumns)` — Creates a fresh `HashTable` and writes
-  the CSV header. Any pre-existing file with the same name is overwritten.
-- `CSVTable(String existingName)` — Reads the CSV header to reconstruct columns, then puts
-  each data row into a fresh `HashTable`. After this constructor the fingerprint equals that
-  of the table state that was last flushed.
+- `CSVTable(String newName, List<String> newColumns)` — Creates `db/tables/` if needed,
+  then writes the header line to a new file. Any pre-existing file is overwritten.
+- `CSVTable(String existingName)` — Guards that both `db/tables/` and
+  `<existingName>.csv` exist, then accepts the path. All data is read from the file
+  on demand.
 
-**Flush Strategy**
+### Properties (no amortization)
 
-`flush()` rewrites the entire CSV (header + all live rows from the `HashTable` iterator).
-It is called after every mutation:
+Each property reads directly from the file on every call:
 
-- `put(key, values)` — always flushes (whether hit or miss)
-- `remove(key)` — flushes only on a hit (non-null return)
-- `clear()` — flushes (leaves only the header line)
+- `name()` — derived from the filename by stripping `.csv`
+- `columns()` — reads and decodes the header line
+- `degree()` — returns `columns().size()`
+- `size()` — reads all lines and counts non-empty data rows
+- `hashCode()` — reads all data rows, decodes each to a `Row`, sums `Row.hashCode()`
 
-If `put` throws `IllegalArgumentException` (wrong values size), the exception propagates
-before `flush()` is called, so the file is not modified.
+### Standard Operations
 
-**Fingerprint**
+| Method | Behavior |
+|--------|----------|
+| `clear()` | Reads columns, then rewrites the file with only the header line |
+| `put(key, values)` | Guards null/empty key and wrong values size. Scans file for key: on hit rewrites the file with the updated row; on miss appends the new row. Returns old values or null. |
+| `get(key)` | Guards null/empty key. Scans file and returns values on hit, null on miss. No write. |
+| `remove(key)` | Guards null/empty key. Scans file: on hit removes the row and rewrites; on miss returns null without writing. |
+| `iterator()` | Reads all data rows into a `List<Row>`, returns `list.iterator()`. No `hasNext`/`next` implemented. |
 
-`hashCode()` delegates to `inMemory.hashCode()`, which maintains a running fingerprint using
-`Row(key, values).hashCode()` (Java record hash). This matches the `ControlRow` fingerprint
-in the test harness because both records have identical component types and use the same
-JVM record hash implementation.
-
-When reopening from CSV, each row is inserted into a fresh `HashTable` via `put` (all misses),
-rebuilding the fingerprint incrementally. Type preservation ensures the fingerprint matches.
-
-**Null values**
-
-`null` table values are supported. The `Collections.unmodifiableList` wrapper (instead of
-`List.copyOf`) is used when reconstructing value lists from CSV, since `List.copyOf` rejects
-null elements.
-
-### Methods
+### Encoding Helpers
 
 | Method | Description |
 |--------|-------------|
-| `CSVTable(name, columns)` | Create new table; write header to disk |
-| `CSVTable(name)` | Open existing table; parse CSV and populate HashTable |
-| `flush()` | Rewrite entire CSV from in-memory state |
-| `clear()` | Delegate to HashTable, then flush |
-| `put(key, values)` | Delegate to HashTable (may throw IAE), then flush |
-| `get(key)` | Delegate to HashTable; no flush |
-| `remove(key)` | Delegate to HashTable; flush only on hit |
-| `degree()` | Delegates to `inMemory.degree()` |
-| `size()` | Delegates to `inMemory.size()` |
-| `hashCode()` | Delegates to `inMemory.hashCode()` (fingerprint) |
-| `equals(obj)` | `obj instanceof Table && hashCode() == obj.hashCode()` |
-| `iterator()` | Delegates to `inMemory.iterator()` |
-| `name()` | Delegates to `inMemory.name()` |
-| `columns()` | Delegates to `inMemory.columns()` |
-| `toString()` | Calls `toPrettyString()` from `PrettyTable` |
+| `encodeFields(List<String>)` | Joins strings with commas, each wrapped in double quotes. Used for the header line. |
+| `decodeFields(String)` | Splits on commas and strips double quotes. Used to read the header. |
+| `encodeRow(String, List<Object>)` | Encodes a data row: quoted key, then each value by type. |
+| `decodeRow(String)` | Decodes a data row: strips quotes from key, infers type of each value field. |
+| `encodeField(Object)` | Quotes strings, writes integers/booleans as-is, empty string for null. |
+| `decodeField(String)` | Empty → null; quoted → String; `true`/`false` → Boolean; otherwise → Integer. |
+
+---
+
+# Module 4: JSONTable Implementation
+
+## JSONTable.java
+
+### Overview
+
+`JSONTable` is a file-backed table that persists all data to a JSON file at
+`db/tables/<name>.json`. It implements `FileTable`, `QueryTable`, and `PrettyTable`.
+All state is stored in an in-memory `ObjectNode` (`tree`) that is written to disk on
+every mutating operation via `flush()`.
+
+### Fields
+
+| Field      | Type                  | Description |
+|------------|-----------------------|-------------|
+| `baseDir`  | `static final Path`   | Base directory `db/tables/` |
+| `jsonFile` | `final Path`          | Path to `db/tables/<name>.json` |
+| `helper`   | `static final ObjectMapper` | Shared Jackson mapper for reading/writing JSON |
+| `tree`     | `final ObjectNode`    | In-memory root node; mirrors the JSON file at all times |
+
+Only `Path`, `ObjectMapper`, and `ObjectNode` fields are used, satisfying the Module 4
+forbidden-class restrictions.
+
+### File Format
+
+```json
+{
+  "name": "tableName",
+  "columns": ["k1", "f1a", "f1b"],
+  "rows": {
+    "key1": ["hello", 42, true],
+    "key2": ["world", null, false]
+  }
+}
+```
+
+The `rows` object maps each key (always a string) to a JSON array of values. Value
+types map directly to JSON primitives:
+
+| Java type   | JSON encoding   | Example        |
+|-------------|-----------------|----------------|
+| `String`    | JSON string     | `"hello"`      |
+| `Integer`   | JSON number     | `42`           |
+| `Boolean`   | JSON boolean    | `true`         |
+| `null`      | JSON null       | `null`         |
+
+This allows exact round-trip reconstruction of all four value types, preserving
+`hashCode()` compatibility with the control table.
+
+### Constructors
+
+- `JSONTable(String newName, List<String> newColumns)` — Creates `db/tables/` if needed,
+  initializes a fresh `ObjectNode` with `name`, `columns`, and an empty `rows` object,
+  then calls `flush()` to write it to disk.
+- `JSONTable(String existingName)` — Guards that the `.json` file exists, then reads it
+  back from disk into `tree` via `helper.readTree()`. All subsequent operations work
+  against the in-memory `tree`.
+
+### Properties
+
+Each property reads directly from `tree` (no file I/O after construction):
+
+- `name()` — returns `tree.get("name").textValue()`
+- `columns()` — iterates the `columns` array node, returns an unmodifiable list
+- `degree()` — returns `columns().size()`
+- `size()` — returns `tree.get("rows").size()`
+- `hashCode()` — iterates all entries in the `rows` object, decodes each to a `Row`,
+  sums `Row.hashCode()` (matching the control table fingerprint algorithm)
+
+### Standard Operations
+
+| Method | Behavior |
+|--------|----------|
+| `clear()` | Calls `removeAll()` on the `rows` ObjectNode, then flushes to disk |
+| `put(key, values)` | Guards wrong values size. Checks `rows` for an existing entry: on hit saves old decoded values, replaces the array, flushes, returns old; on miss adds new array, flushes, returns null |
+| `get(key)` | Looks up key in `rows`; returns decoded values on hit, null on miss. No flush. |
+| `remove(key)` | Looks up key in `rows`; on hit decodes old values, removes the entry, flushes, returns old; on miss returns null |
+| `iterator()` | Iterates `rows.properties()`, decodes each entry into a `Row`, returns a list iterator |
+
+### Encoding Helpers
+
+| Method | Description |
+|--------|-------------|
+| `encodeValue(ArrayNode, Object)` | Appends one typed value to a Jackson `ArrayNode`: null → `addNull()`, String → `add(s)`, Integer → `add(i)`, Boolean → `add(b)` |
+| `decodeValues(JsonNode)` | Iterates a value array node; maps `isNull` → null, `isTextual` → String, `isInt` → Integer, `isBoolean` → Boolean |
+
+---
+
+## QueryTable.java
+
+`select` is implemented as a default method directly in the `QueryTable` interface, as
+required by the rubric ("In the Query Table API only").
+
+### select(String column, Object criteria)
+
+Returns a new `HashTable` containing only the rows where the value in `column` equals
+`criteria`. The result has the same columns as the original table.
+
+**Algorithm:**
+1. Get column list and find the index of `column`
+2. Create a new `HashTable` with the same name (suffixed `_select`) and columns
+3. Iterate over `this` — for each row, retrieve the value at `idx` (key if `idx == 0`,
+   otherwise `values.get(idx - 1)`)
+4. If the value equals `criteria` (null-safe), put the row into the result table
+5. Return the result
+
+Supports matching on String, Integer, Boolean, and null criteria.
 
 ---
 
 ## Sandbox.java
 
-The Sandbox demonstrates three `CSVTable` scenarios:
+The Sandbox demonstrates three original `CSVTable` instances, covering all constructors,
+properties, standard operations, and the `select` query method.
 
-1. **Video Games** — Creates a new table, inserts 5 rows, performs a get (hit and miss), an
-   update put (returns old values), and a remove. Then reopens the same CSV with the
-   1-parameter constructor and confirms name, columns, size, and fingerprint match.
+### 1. Video Games (`csv_games`)
 
-2. **Programming Languages** — Creates a table, inserts 4 rows, iterates with a for-each loop,
-   calls `clear()`, then reopens to confirm the cleared state persisted.
+- Creates a new table with 7 rows
+- Demonstrates `degree()`, `size()`, iterator (for-each)
+- `put` hit — returns old values; confirms new value updated
+- `put` miss — returns null
+- `remove` hit and miss
+- Reopens with 1-parameter constructor; verifies `name`, `columns`, `size`, and
+  fingerprint (`hashCode`) match across the disk round-trip
 
-3. **Type Preservation** — Creates a table with String, Integer, Boolean, and null values.
-   Reopens it and verifies each value's Java type was restored correctly and the fingerprint
-   matches the original.
+### 2. Albums (`csv_albums`)
+
+- Creates a new table with 7 rows
+- `select` on a String column: `artist = "Kendrick"` → 2 results
+- `select` on an Integer column: `year = 1973` → 1 result
+- `select` on a Boolean column: `explicit = true` → 2 results
+- `select` with no matches: `artist = "Drake"` → 0 results
+- `clear()`, then reopens to confirm the cleared state persisted to disk
+
+### 3. Planets (`csv_planets`)
+
+- Creates a new table with 8 rows containing String, Integer, Boolean, and null values
+- `select` on a String column: `type = "gas giant"` → 2 results
+- `select` on a null criteria: `life = null` → 2 results (Mercury, Venus)
+- Reopens with 1-parameter constructor; verifies each field's Java type was preserved
+  correctly after the disk round-trip
+- Confirms fingerprints match between original and reopened table
