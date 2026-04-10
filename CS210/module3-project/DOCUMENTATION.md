@@ -169,6 +169,40 @@ Each property reads directly from `tree` (no file I/O after construction):
 
 ---
 
+## QueryTable.java (Module 4 additions)
+
+Three set-algebra query methods are implemented as default methods in the `QueryTable`
+interface. All return a new `HashTable` result; the source tables are not modified.
+
+### union(QueryTable table)
+
+Returns a new table containing all rows from `this` plus any rows from `table` whose
+key does not already exist in `this`. Rows from `this` take precedence on key conflicts.
+
+**Algorithm:**
+1. Create a new `HashTable` named `<name>_union` with the same columns
+2. Put all rows from `this` into the result
+3. For each row in `table`, put it only if the key is not already in the result
+
+### intersect(QueryTable table)
+
+Returns a new table containing only the rows of `this` whose key also appears in `table`.
+
+**Algorithm:**
+1. Create a new `HashTable` named `<name>_intersect` with the same columns
+2. For each row in `this`, add it to the result only if `table.contains(row.key())`
+
+### minus(QueryTable table)
+
+Returns a new table containing only the rows of `this` whose key does **not** appear
+in `table`.
+
+**Algorithm:**
+1. Create a new `HashTable` named `<name>_minus` with the same columns
+2. For each row in `this`, add it to the result only if `!table.contains(row.key())`
+
+---
+
 ## QueryTable.java
 
 `select` is implemented as a default method directly in the `QueryTable` interface, as
@@ -217,9 +251,36 @@ properties, standard operations, and the `select` query method.
 
 ### 3. Planets (`csv_planets`)
 
+
 - Creates a new table with 8 rows containing String, Integer, Boolean, and null values
 - `select` on a String column: `type = "gas giant"` → 2 results
 - `select` on a null criteria: `life = null` → 2 results (Mercury, Venus)
 - Reopens with 1-parameter constructor; verifies each field's Java type was preserved
   correctly after the disk round-trip
 - Confirms fingerprints match between original and reopened table
+
+### 4. Albums (`json_albums`)
+
+- Creates a new `JSONTable` with 7 rows (String, Integer, Boolean values)
+- Demonstrates `degree()`, `size()`, iterator (for-each)
+- `put` hit — returns old artist string; confirms new value updated
+- `put` miss — returns null for unknown key
+- `remove` hit and miss
+- Reopens with 1-parameter constructor; verifies `name`, `columns`, `size`, and
+  fingerprint (`hashCode`) match across the disk round-trip
+
+### 5. Rock Albums (`json_rock_albums`)
+
+- Creates a new `JSONTable` with 4 rows using the same schema as `json_albums`
+- Reopens and verifies fingerprint survives round-trip
+- Serves as the right-hand operand for `intersect` and `minus`
+
+### 6. Hip-Hop Albums (`json_hiphop_albums`)
+
+- Creates a new `JSONTable` with 4 rows using the same schema as `json_albums`
+- Includes two keys that overlap with `json_albums` (Kendrick entries)
+- Reopens and verifies fingerprint survives round-trip
+- Serves as the right-hand operand for `union`
+- **`union`** with `json_albums`: all 9 unique albums (overlapping Kendrick keys kept from `json_albums`)
+- **`intersect`** with `json_rock_albums`: rows in `json_albums` whose key also exists in `json_rock_albums`
+- **`minus`** with `json_rock_albums`: rows in `json_albums` not present in `json_rock_albums`

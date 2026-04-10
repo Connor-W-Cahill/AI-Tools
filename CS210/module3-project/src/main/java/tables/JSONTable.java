@@ -69,8 +69,7 @@ public class JSONTable implements FileTable, QueryTable, PrettyTable {
 	@Override
 	public void flush() {
 		try {
-			var writer = helper;
-			writer.writeValue(jsonFile.toFile(), tree);
+			helper.writerWithDefaultPrettyPrinter().writeValue(jsonFile.toFile(), tree);
 		}
 		catch (StreamWriteException e) {
 			throw new IllegalStateException(e);
@@ -85,6 +84,8 @@ public class JSONTable implements FileTable, QueryTable, PrettyTable {
 
 	@Override
 	public List<Object> put(String key, List<Object> values) {
+		if (key == null || key.isEmpty())
+			throw new IllegalArgumentException("Key cannot be null or empty");
 		var cols = columns();
 		if (values == null || values.size() != cols.size() - 1)
 			throw new IllegalArgumentException("Wrong number of values: expected " + (cols.size() - 1));
@@ -108,6 +109,7 @@ public class JSONTable implements FileTable, QueryTable, PrettyTable {
 
 	@Override
 	public List<Object> get(String key) {
+		if (key == null || key.isEmpty()) return null;
 		var rows = (ObjectNode) tree.get("rows");
 		var node = rows.get(key);
 		if (node == null) return null;
@@ -116,6 +118,7 @@ public class JSONTable implements FileTable, QueryTable, PrettyTable {
 
 	@Override
 	public List<Object> remove(String key) {
+		if (key == null || key.isEmpty()) return null;
 		var rows = (ObjectNode) tree.get("rows");
 		var node = rows.get(key);
 		if (node == null) return null;
